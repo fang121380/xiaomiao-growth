@@ -465,8 +465,9 @@ const BreedPicker = {
     this.onlineResults = [];
     this.onlineError = null;
     this.loading = false;
-    this.render();
     openModal(this.containerHTML());
+    // ⚠️ 必须在 openModal 之后调用 render，否则 #bpList 等元素不存在
+    this.render();
     setTimeout(() => $('#breedSearchInput')?.focus(), 300);
   },
 
