@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#FFFAF0" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+  <link rel="apple-touch-icon" href="icon-180.png" />
+  <title>小喵成长记</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script>
+    /* v2 强制清理：第一次打开新版时清掉旧 SW + 旧缓存并硬刷新一次 */
+    (function () {
+      try {
+        if (localStorage.getItem('xiaomiao.v2-launched')) return;
+        var did = false;
+        if ('caches' in window) {
+          caches.keys().then(function (keys) {
+            keys.forEach(function (k) { caches.delete(k); did = true; });
+          });
+        }
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function (regs) {
+            regs.forEach(function (r) { r.unregister(); did = true; });
+          });
+        }
+        // 延迟一下确保 SW 注销完成，再 reload
+        setTimeout(function () {
+          localStorage.setItem('xiaomiao.v2-launched', '1');
+          if (did) {
+            var url = location.href.split('#')[0];
+            location.replace(url + (url.indexOf('?') >= 0 ? '&' : '?') + '_v=' + Date.now());
+          }
+        }, 300);
+      } catch (e) {
+        localStorage.setItem('xiaomiao.v2-launched', '1');
+      }
+    })();
+  </script>
+</head>
+<body>
+
+  <!-- ============ 启动屏 ============ -->
+  <div id="splash" class="splash">
+    <div class="splash-inner">
+      <div class="splash-icon">
+        <img src="icon.svg" alt="logo" />
+      </div>
+      <div class="splash-title">小喵成长记</div>
+      <div class="splash-sub">每一刻成长，都值得记录 🐾</div>
+      <div class="splash-loader"><span></span><span></span><span></span></div>
+    </div>
+  </div>
+
+  <!-- ============ 主 App ============ -->
+  <div id="app" class="app hidden">
+
+    <!-- 顶部毛玻璃导航 -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="topbar-greet" id="topbarGreet">早安，<b id="topbarName">小喵</b></div>
+        <div class="topbar-sub" id="topbarSub">陪伴第 <b id="topbarDays">—</b></div>
+      </div>
+      <div class="topbar-right">
+        <button class="icon-btn" id="topbarSettings" aria-label="设置">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <main id="pages">
+
+      <!-- ============== 首页 ============== -->
+      <section class="page active" data-page="home">
+
+        <!-- 形象照 Hero -->
+        <div class="hero-card">
+          <div class="hero-photo" id="heroPhoto">
+            <div class="hero-photo-empty">
+              <div class="emoji">📸</div>
+              <div class="txt">还没有形象照</div>
+              <div class="hint">点击右侧按钮添加</div>
+            </div>
+          </div>
+          <div class="hero-info">
+            <div class="hero-name" id="heroName">小喵</div>
+            <div class="hero-meta">
+              <span class="badge" id="heroBreed">—</span>
+              <span class="dot"></span>
+              <span id="heroAge">— 天</span>
+            </div>
+          </div>
+          <button class="hero-action" id="changePhotoBtn" aria-label="换形象照">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- 4 个统计卡片 2x2 -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon" style="--ic:#FFE0CC;--ic2:#F5A86B">🎂</div>
+            <div class="stat-info">
+              <div class="stat-num" id="statDays">—</div>
+              <div class="stat-label">出生天数</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="--ic:#D6F0D2;--ic2:#5FA82C">📖</div>
+            <div class="stat-info">
+              <div class="stat-num" id="statRecords">0</div>
+              <div class="stat-label">生活记录</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="--ic:#CFE7F5;--ic2:#3D8AB8">⚖️</div>
+            <div class="stat-info">
+              <div class="stat-num" id="statWeight">—</div>
+              <div class="stat-label">最近体重</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="--ic:#F5DCE6;--ic2:#D85A8A">📷</div>
+            <div class="stat-info">
+              <div class="stat-num" id="statPhotos">0</div>
+              <div class="stat-label">照片</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 快速记录 -->
+        <div class="section">
+          <div class="section-head">
+            <div class="section-title">⚡ 快速记录</div>
+            <div class="section-tip">长按展开更多类型</div>
+          </div>
+          <div class="quick-row">
+            <button class="quick-btn" data-action="feed">
+              <div class="quick-icon" style="--ic:#FFE0CC">🍽️</div>
+              <div class="quick-label">喂食</div>
+            </button>
+            <button class="quick-btn" data-action="weight">
+              <div class="quick-icon" style="--ic:#CFE7F5">⚖️</div>
+              <div class="quick-label">称重</div>
+            </button>
+            <button class="quick-btn" data-action="poop">
+              <div class="quick-icon" style="--ic:#F0E1D5">💩</div>
+              <div class="quick-label">排便</div>
+            </button>
+            <button class="quick-btn" data-action="medicine">
+              <div class="quick-icon" style="--ic:#E1D6F5">💊</div>
+              <div class="quick-label">用药</div>
+            </button>
+            <button class="quick-btn" data-action="life">
+              <div class="quick-icon" style="--ic:#FFF1D6">🐾</div>
+              <div class="quick-label">日常</div>
+            </button>
+          </div>
+        </div>
+
+        <!-- 最近记录 -->
+        <div class="section">
+          <div class="section-head">
+            <div class="section-title">📝 最近记录</div>
+            <button class="link-btn" id="gotoTimeline">全部 ›</button>
+          </div>
+          <div id="recentRecords" class="recent-list"></div>
+        </div>
+
+      </section>
+
+      <!-- ============== 时间线 ============== -->
+      <section class="page" data-page="timeline">
+        <div class="page-hero">
+          <h2>生活记录</h2>
+          <p class="page-sub">记录每一个成长瞬间</p>
+        </div>
+        <div class="filter-bar" id="filterTabs">
+          <button class="chip active" data-filter="all">全部</button>
+          <button class="chip" data-filter="feed">🍽️ 喂食</button>
+          <button class="chip" data-filter="weight">⚖️ 体重</button>
+          <button class="chip" data-filter="poop">💩 排便</button>
+          <button class="chip" data-filter="pee">💧 排尿</button>
+          <button class="chip" data-filter="medicine">💊 用药</button>
+          <button class="chip" data-filter="sick">🤒 生病</button>
+          <button class="chip" data-filter="vaccine">💉 疫苗</button>
+          <button class="chip" data-filter="deworm">🪱 驱虫</button>
+          <button class="chip" data-filter="bath">🛁 洗澡</button>
+          <button class="chip" data-filter="nail">✂️ 剪甲</button>
+          <button class="chip" data-filter="life">🐾 日常</button>
+        </div>
+        <div id="timelineList" class="timeline-list"></div>
+        <button class="fab" id="fabAdd" aria-label="新增记录">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+        </button>
+      </section>
+
+      <!-- ============== 形象相册 ============== -->
+      <section class="page" data-page="lookbook">
+        <div class="page-hero">
+          <h2>形象相册</h2>
+          <p class="page-sub">从毛茸茸到小胖喵，每一刻都值得</p>
+        </div>
+        <div class="lookbook-toolbar">
+          <div class="lookbook-stat">
+            <span id="lookCount">0</span> 张照片
+          </div>
+          <button class="primary-btn" id="addLookbookBtn">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            <span>添加</span>
+          </button>
+        </div>
+        <div id="lookbookGrid" class="lookbook-grid"></div>
+      </section>
+
+      <!-- ============== 设置 ============== -->
+      <section class="page" data-page="settings">
+        <div class="page-hero">
+          <h2>设置</h2>
+          <p class="page-sub">管理小猫资料与数据</p>
+        </div>
+
+        <div class="setting-group">
+          <div class="group-label">小猫资料</div>
+          <form id="profileForm" class="setting-card">
+            <label class="field">
+              <span class="field-label">名字</span>
+              <input type="text" name="name" placeholder="给它起个名字" required />
+            </label>
+            <label class="field" id="breedField">
+              <span class="field-label">品种</span>
+              <div class="field-picker" id="breedPicker">
+                <span class="picker-text">点击选择品种</span>
+                <span class="picker-arrow">⌄</span>
+              </div>
+              <input type="hidden" name="breed" />
+              <input type="hidden" name="breedSci" />
+            </label>
+            <label class="field">
+              <span class="field-label">性别</span>
+              <div class="seg" id="genderSeg">
+                <button type="button" data-v="unknown">未知</button>
+                <button type="button" data-v="male">弟弟 ♂</button>
+                <button type="button" data-v="female">妹妹 ♀</button>
+              </div>
+              <input type="hidden" name="gender" />
+            </label>
+            <label class="field">
+              <span class="field-label">出生日期</span>
+              <div class="field-picker" id="birthPicker">
+                <span class="picker-text">点击选择</span>
+                <span class="picker-arrow">›</span>
+              </div>
+              <input type="hidden" name="birthDate" />
+            </label>
+            <label class="field">
+              <span class="field-label">到家日期</span>
+              <div class="field-picker" id="adoptPicker">
+                <span class="picker-text">点击选择</span>
+                <span class="picker-arrow">›</span>
+              </div>
+              <input type="hidden" name="adoptDate" />
+            </label>
+            <button type="submit" class="primary-btn block">
+              <span>保存资料</span>
+            </button>
+          </form>
+        </div>
+
+        <div class="setting-group">
+          <div class="group-label">数据管理</div>
+          <div class="setting-card list">
+            <button class="list-item" id="exportBtn">
+              <span class="li-icon" style="background:#D6F0D2;color:#3D7B1F">📤</span>
+              <span class="li-text">导出全部数据</span>
+              <span class="li-arrow">›</span>
+            </button>
+            <button class="list-item" id="importBtn">
+              <span class="li-icon" style="background:#CFE7F5;color:#2D7AB0">📥</span>
+              <span class="li-text">导入数据</span>
+              <input type="file" id="importFile" accept="application/json" hidden />
+              <span class="li-arrow">›</span>
+            </button>
+            <button class="list-item danger" id="clearBtn">
+              <span class="li-icon" style="background:#F5DCE6;color:#D85A8A">🗑️</span>
+              <span class="li-text">清空全部数据</span>
+              <span class="li-arrow">›</span>
+            </button>
+          </div>
+          <div class="setting-hint">
+            所有数据仅保存在本机浏览器，不会上传到任何服务器。<br>
+            卸载 APP = 数据丢失，请定期导出备份。
+          </div>
+        </div>
+
+        <div class="setting-group">
+          <div class="group-label">关于</div>
+          <div class="setting-card about">
+            <img src="icon.svg" class="about-icon" alt="" />
+            <div class="about-info">
+              <div class="about-name">小喵成长记</div>
+              <div class="about-ver">v1.0.0 · 本地工具</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- 底栏 -->
+    <nav class="tabbar">
+      <button class="tab active" data-tab="home">
+        <div class="tab-ico">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+            <polyline points="9 22 9 12 15 12 15 22"/>
+          </svg>
+        </div>
+        <span class="tab-label">首页</span>
+      </button>
+      <button class="tab" data-tab="timeline">
+        <div class="tab-ico">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+          </svg>
+        </div>
+        <span class="tab-label">记录</span>
+      </button>
+      <button class="tab" data-tab="lookbook">
+        <div class="tab-ico">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+        </div>
+        <span class="tab-label">相册</span>
+      </button>
+      <button class="tab" data-tab="settings">
+        <div class="tab-ico">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24"/>
+          </svg>
+        </div>
+        <span class="tab-label">设置</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- ============ 通用弹层 ============ -->
+  <div id="sheet" class="sheet hidden">
+    <div class="sheet-mask" data-close></div>
+    <div class="sheet-body">
+      <div class="sheet-handle"></div>
+      <div id="sheetContent"></div>
+    </div>
+  </div>
+
+  <!-- ============ 全屏弹层（用于日期选择器、品种选择器） ============ -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-mask" data-close></div>
+    <div class="modal-body" id="modalContent"></div>
+  </div>
+
+  <!-- ============ Toast ============ -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- ============ 文件输入 ============ -->
+  <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden />
+  <input type="file" id="photoInput" accept="image/*" hidden />
+
+  <!-- ============ Scripts ============ -->
+  <script src="breeds.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

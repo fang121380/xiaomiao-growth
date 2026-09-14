@@ -1,0 +1,12 @@
+{
+  "appId": "com.andrew.xiaomiao",
+  "appName": "小喵成长记",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#fff1de"
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}
