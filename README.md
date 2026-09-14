@@ -72,3 +72,24 @@ cd android
 MIT License
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+---
+
+## ⚠️ 重要警告：DeepSeek API Key
+
+本项目使用 **DeepSeek API** 提供 AI 宠物医生对话功能。
+
+`config.js` 文件中**默认包含一个硬编码的 API key**（仅供原作者个人使用），**该 key 已在 `.gitignore` 中被排除，不会进入 Git 历史**。
+
+### 如果你要 fork / 二次分发：
+
+1. **必须删除 `config.js` 中的默认 key**——这是原作者的私人凭据
+2. **必须用自己的 DeepSeek key** 替换（[申请地址](https://platform.deepseek.com/)）
+3. 或者改为运行时让用户输入 key 的方案
+
+### 安全提醒
+
+- APK 文件可以被反编译，任何下载者都能提取 key
+- 硬编码 key 意味着**任何人都能用你的额度**
+- **绝对不要**把含真实 key 的 `config.js` commit 到公开仓库
+- 建议去 [DeepSeek 控制台](https://platform.deepseek.com/) 设置月消费上限

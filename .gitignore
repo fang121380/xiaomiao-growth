@@ -65,6 +65,10 @@ android/keystore.properties
 *.jks
 *.p12
 
+# 本地配置文件（含 DeepSeek API key 等敏感信息）
+config.js
+config.local.js
+
 # ===== 杂项 =====
 .env
 .env.local

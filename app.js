@@ -614,6 +614,7 @@ function renderAll() {
   renderTimeline();
   renderLookbook();
   renderProfileForm();
+  renderAssistant();
 }
 
 function renderTopbar() {
@@ -855,6 +856,376 @@ function renderProfileForm() {
     f[name].value = val || '';
   });
 }
+
+/* ====================================================================
+ *  助手模块：知识库 + AI 宠物医生
+ * ==================================================================== */
+const KB_CAT_COLORS = {
+  '疾病': { bg: '#F5DCE6', fg: '#D85A8A', icon: '🤒' },
+  '症状': { bg: '#FFE0CC', fg: '#E07B3A', icon: '🔍' },
+  '护理': { bg: '#D6F0D2', fg: '#3D7B1F', icon: '🩺' },
+  '营养': { bg: '#FFF1D6', fg: '#C9A058', icon: '🍗' },
+  '行为': { bg: '#CFE7F5', fg: '#2D7AB0', icon: '🎯' },
+  '紧急': { bg: '#FCE3E3', fg: '#E15555', icon: '🚨' },
+};
+
+const Assistant = {
+  chatMode: false,
+  history: [],
+  loading: false,
+
+  render() {
+    if (this.chatMode) return; // 聊天模式不重渲染（保留输入状态）
+    this.renderQuickList('');
+  },
+
+  renderQuickList(query) {
+    const list = $('#kbQuickList');
+    if (!list) return;
+    let items;
+    if (query && query.trim()) {
+      items = window.searchKnowledge(query, 12);
+      if (items.length === 0) {
+        list.innerHTML = `
+          <div class="recent-empty" style="grid-column:1/-1;padding:24px 12px">
+            <div class="emoji">🤔</div>
+            <div>知识库里没找到「${escapeHtml(query)}」相关</div>
+            <div style="margin-top:6px;font-size:11px">试试问 AI 医生吧 ↓</div>
+          </div>
+        `;
+        return;
+      }
+    } else {
+      items = window.recommendKnowledge(8);
+    }
+    list.innerHTML = items.map(k => this.cardHTML(k)).join('');
+    $$('#kbQuickList .kb-card').forEach(b => {
+      b.onclick = () => this.openDetail(b.dataset.id);
+    });
+  },
+
+  cardHTML(k) {
+    const c = KB_CAT_COLORS[k.cat] || { bg: '#F0E1D5', fg: '#A8765A', icon: '📖' };
+    const sevMark = k.needsVet ? `<span style="font-size:10px;background:var(--danger-bg);color:var(--danger);padding:1px 6px;border-radius:6px;font-weight:700;margin-left:auto">需就医</span>` : '';
+    return `
+      <button class="kb-card" data-id="${k.id}">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
+          <div class="kb-card-ico" style="background:${c.bg};color:${c.fg}">${c.icon}</div>
+          ${sevMark}
+        </div>
+        <div class="kb-card-title">${escapeHtml(k.title)}</div>
+        <div class="kb-card-desc">${escapeHtml(k.desc)}</div>
+        <div class="kb-card-cat">${escapeHtml(k.cat)}</div>
+      </button>
+    `;
+  },
+
+  openDetail(id) {
+    const k = window.CAT_KNOWLEDGE.find(x => x.id === id);
+    if (!k) return;
+    const c = KB_CAT_COLORS[k.cat] || { icon: '📖' };
+    const sevHtml = k.needsVet
+      ? `<div class="kb-detail-cat" style="color:var(--danger)">⚠️ 建议尽快就医</div>`
+      : '';
+    const stepsHtml = k.steps.map(s => {
+      const isWarn = /^(🚨|⚠️|❌|不能)/.test(s);
+      return `<li class="${isWarn ? 'warn' : ''}">${escapeHtml(s)}</li>`;
+    }).join('');
+    openSheet(`
+      <div class="kb-detail">
+        <div class="kb-detail-head">
+          <div class="kb-card-ico" style="background:${KB_CAT_COLORS[k.cat]?.bg || '#F0E1D5'};color:${KB_CAT_COLORS[k.cat]?.fg || '#A8765A'};font-size:24px">${c.icon}</div>
+          <div>
+            <div class="kb-detail-title">${escapeHtml(k.title)}</div>
+            <div class="kb-detail-cat">${escapeHtml(k.cat)} · 严重程度 ${k.severity}/5</div>
+            ${sevHtml}
+          </div>
+        </div>
+        <div class="kb-detail-desc">${escapeHtml(k.desc)}</div>
+        <h4 style="margin:0 0 8px;font-size:14px">📋 处理建议</h4>
+        <ol class="kb-detail-steps">${stepsHtml}</ol>
+        <div class="sheet-actions">
+          <button class="secondary-btn" data-close>关闭</button>
+          <button class="primary-btn" id="askAiFromKb">问 AI 医生</button>
+        </div>
+      </div>
+    `);
+    $('#askAiFromKb').onclick = () => {
+      closeSheet();
+      this.history.push({ role: 'assistant', content: `我看到你在了解「${k.title}」。如果想深入问，可以告诉我具体情况，比如症状持续时间、小猫年龄、近期的饮食和用药情况。` });
+      this.enterChat();
+    };
+  },
+
+  enterChat() {
+    this.chatMode = true;
+    const page = document.querySelector('.page[data-page="assistant"]');
+    page.classList.add('chat-mode');
+    this.mountChatUI();
+    setTimeout(() => $('#chatInput')?.focus(), 100);
+  },
+
+  exitChat() {
+    this.chatMode = false;
+    const page = document.querySelector('.page[data-page="assistant"]');
+    page.classList.remove('chat-mode');
+    page.innerHTML = this.originalHTML();
+    this.bindHomeEvents();
+    this.renderQuickList($('#kbSearchInput')?.value || '');
+  },
+
+  originalHTML() {
+    return `
+      <div class="assistant-hero">
+        <div class="assistant-hero-inner">
+          <div class="assistant-avatar">
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+          </div>
+          <div class="assistant-greet">
+            <div class="assistant-title">🐾 小喵健康顾问</div>
+            <div class="assistant-sub">症状 / 用药 / 护理 / 行为 — 随时问我</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="search-bar">
+        <svg class="search-ico" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="search" id="kbSearchInput" class="search-input" placeholder="搜索养猫知识，比如：呕吐 / 猫癣 / 疫苗" autocomplete="off" />
+      </div>
+
+      <div class="section">
+        <div class="section-head">
+          <div class="section-title">📚 知识速查</div>
+        </div>
+        <div id="kbQuickList" class="kb-quick-grid"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-head">
+          <div class="section-title">🤖 智能问答</div>
+          <div class="section-tip">DeepSeek AI · 复杂问题问我</div>
+        </div>
+        <button class="ai-start-btn" id="aiStartBtn">
+          <div class="ai-start-ico">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="11" width="18" height="10" rx="2"/>
+              <circle cx="12" cy="5" r="2"/>
+              <path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/>
+            </svg>
+          </div>
+          <div class="ai-start-text">
+            <div class="ai-start-title">找 AI 宠物医生聊聊</div>
+            <div class="ai-start-sub">回答不了的问题，这里可以详细咨询</div>
+          </div>
+          <span class="ai-start-arrow">›</span>
+        </button>
+      </div>
+    `;
+  },
+
+  mountChatUI() {
+    const page = document.querySelector('.page[data-page="assistant"]');
+    page.innerHTML = `
+      <div class="chat-page">
+        <div class="chat-header">
+          <button class="chat-header-back" id="chatBack" aria-label="返回">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6"/>
+            </svg>
+          </button>
+          <div class="chat-header-info">
+            <div class="chat-header-name">🐾 AI 宠物医生</div>
+            <div class="chat-header-status">在线 · DeepSeek</div>
+          </div>
+          <button class="chat-clear" id="chatClear">清空</button>
+        </div>
+        <div class="chat-list" id="chatList"></div>
+        <div class="chat-input-bar">
+          <textarea class="chat-input" id="chatInput" rows="1" placeholder="描述小猫的情况…" maxlength="500"></textarea>
+          <button class="chat-send" id="chatSend" aria-label="发送">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    `;
+    this.bindChatEvents();
+    this.renderMessages();
+  },
+
+  bindHomeEvents() {
+    const sb = $('#aiStartBtn');
+    if (sb) sb.onclick = () => this.enterChat();
+    const input = $('#kbSearchInput');
+    if (input) {
+      input.oninput = e => this.renderQuickList(e.target.value);
+    }
+  },
+
+  bindChatEvents() {
+    $('#chatBack').onclick = () => this.exitChat();
+    $('#chatClear').onclick = () => {
+      if (!confirm('清空本次对话？')) return;
+      this.history = [];
+      this.renderMessages();
+    };
+    $('#chatSend').onclick = () => this.sendMessage();
+    const input = $('#chatInput');
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        this.sendMessage();
+      }
+    };
+    // 自适应高度
+    input.oninput = () => {
+      input.style.height = 'auto';
+      input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+      $('#chatSend').disabled = !input.value.trim();
+    };
+    $('#chatSend').disabled = true;
+  },
+
+  renderMessages() {
+    const list = $('#chatList');
+    if (!list) return;
+    if (this.history.length === 0) {
+      list.innerHTML = `
+        <div class="chat-welcome">
+          <div class="emoji">🐾</div>
+          <div class="chat-welcome-title">你好，我是你的 AI 宠物医生</div>
+          <div class="chat-welcome-sub">描述小猫的症状、行为、饮食<br>任何养猫问题都可以问我</div>
+          <div class="chat-quick-asks">
+            <button data-q="小猫呕吐怎么办？">🤮 呕吐</button>
+            <button data-q="猫咪不吃东西怎么办？">🍚 拒食</button>
+            <button data-q="猫打喷嚏流鼻涕？">🤧 感冒</button>
+            <button data-q="猫咪疫苗怎么打？">💉 疫苗</button>
+            <button data-q="猫咪多久驱虫一次？">🪱 驱虫</button>
+          </div>
+          <div style="margin-top:14px;font-size:11px;color:var(--text-muted)">⚠️ AI 仅供参考，严重情况请及时就医</div>
+        </div>
+      `;
+      $$('.chat-quick-asks button').forEach(b => {
+        b.onclick = () => {
+          $('#chatInput').value = b.dataset.q;
+          $('#chatSend').disabled = false;
+          this.sendMessage();
+        };
+      });
+      return;
+    }
+    list.innerHTML = this.history.map(m => this.bubbleHTML(m)).join('');
+    list.scrollTop = list.scrollHeight;
+  },
+
+  bubbleHTML(m) {
+    if (m.content === '__TYPING__') {
+      return `
+        <div class="chat-bubble typing">
+          <div class="chat-bubble-ico">🐾</div>
+          <div class="chat-bubble-text"><span></span><span></span><span></span></div>
+        </div>
+      `;
+    }
+    if (m.role === 'user') {
+      return `
+        <div class="chat-bubble user">
+          <div class="chat-bubble-ico">我</div>
+          <div class="chat-bubble-text">${escapeHtml(m.content)}</div>
+        </div>
+      `;
+    }
+    return `
+      <div class="chat-bubble">
+        <div class="chat-bubble-ico">🐾</div>
+        <div class="chat-bubble-text">${escapeHtml(m.content)}</div>
+      </div>
+    `;
+  },
+
+  async sendMessage() {
+    const input = $('#chatInput');
+    const text = input.value.trim();
+    if (!text || this.loading) return;
+
+    input.value = '';
+    input.style.height = 'auto';
+    $('#chatSend').disabled = true;
+
+    this.history.push({ role: 'user', content: text });
+    this.loading = true;
+    this.history.push({ role: 'assistant', content: '__TYPING__' });
+    this.renderMessages();
+
+    try {
+      const reply = await this.callDeepSeek(text);
+      // 替换 typing
+      this.history = this.history.filter(m => m.content !== '__TYPING__');
+      this.history.push({ role: 'assistant', content: reply });
+    } catch (e) {
+      this.history = this.history.filter(m => m.content !== '__TYPING__');
+      this.history.push({
+        role: 'assistant',
+        content: `抱歉，暂时连不上 AI 医生 😿\n\n错误：${e.message}\n\n请检查网络后重试。\n知识库内容仍可正常浏览。`,
+      });
+    }
+    this.loading = false;
+    this.renderMessages();
+  },
+
+  async callDeepSeek(text) {
+    const apiKey = window.DEEPSEEK_API_KEY;
+    if (!apiKey) throw new Error('未配置 API Key（config.js）');
+
+    const cleanHistory = this.history
+      .filter(m => m.content !== '__TYPING__')
+      .map(m => ({ role: m.role, content: m.content }));
+
+    const sysMsg = {
+      role: 'system',
+      content: `你是一位经验丰富的宠物医生，专门为养猫人士提供专业、温暖、易懂的建议。
+
+回答要求：
+1. 用中文，口语化、有温度，像朋友聊天，不要用书面语
+2. 如果情况紧急或严重，明确建议尽快去宠物医院
+3. 不要给具体药物剂量，只说一般处理思路
+4. 必要时列出可能的几种情况让用户自查
+5. 回答控制在 250 字以内（紧急情况可适当延长）
+6. 不要重复用户的问题
+7. 末尾给一个温馨的小提醒`,
+    };
+
+    const res = await fetch(window.DEEPSEEK_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: window.DEEPSEEK_MODEL || 'deepseek-chat',
+        messages: [sysMsg, ...cleanHistory],
+        temperature: 0.7,
+        max_tokens: 800,
+      }),
+    });
+
+    if (!res.ok) {
+      let errDetail = '';
+      try { errDetail = (await res.json()).error?.message || ''; } catch {}
+      throw new Error(`API ${res.status}${errDetail ? ' · ' + errDetail : ''}`);
+    }
+
+    const data = await res.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) throw new Error('返回为空');
+    return content;
+  },
+};
 
 /* ====================================================================
  *  Sheet: 新增/编辑记录
@@ -1223,6 +1594,17 @@ function switchTab(name) {
   if (name === 'timeline') renderTimeline();
   if (name === 'lookbook') renderLookbook();
   if (name === 'settings') renderProfileForm();
+  if (name === 'assistant') {
+    // 切走再回来时重置 chatMode → 回主页
+    if (Assistant.chatMode) {
+      Assistant.chatMode = false;
+      const page = document.querySelector('.page[data-page="assistant"]');
+      page.classList.remove('chat-mode');
+      page.innerHTML = Assistant.originalHTML();
+      Assistant.bindHomeEvents();
+    }
+    renderAssistant();
+  }
 }
 
 /* ====================================================================
@@ -1416,6 +1798,9 @@ function bindEvents() {
     e.target.value = '';
   });
   $('#clearBtn').addEventListener('click', clearAll);
+
+  // 助手页
+  Assistant.bindHomeEvents();
 }
 
 /* ====================================================================
