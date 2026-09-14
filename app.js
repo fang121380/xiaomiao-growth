@@ -614,7 +614,7 @@ function renderAll() {
   renderTimeline();
   renderLookbook();
   renderProfileForm();
-  renderAssistant();
+  Assistant.render();
 }
 
 function renderTopbar() {
@@ -1603,7 +1603,7 @@ function switchTab(name) {
       page.innerHTML = Assistant.originalHTML();
       Assistant.bindHomeEvents();
     }
-    renderAssistant();
+    Assistant.render();
   }
 }
 
@@ -1840,21 +1840,27 @@ async function boot() {
     location.replace(location.href.split('#')[0] + '?_=' + Date.now());
     return;
   }
-  state.profile = loadProfile();
-  state.records = loadRecords();
-  bindEvents();
+  try {
+    state.profile = loadProfile();
+    state.records = loadRecords();
+    bindEvents();
 
-  // 强制覆盖版本号（防止 SW 缓存的旧 HTML 显示老版本）
-  const verEl = document.querySelector('.about-ver');
-  if (verEl) verEl.textContent = `${APP_VERSION} · 本地工具`;
+    // 强制覆盖版本号（防止 SW 缓存的旧 HTML 显示老版本）
+    const verEl = document.querySelector('.about-ver');
+    if (verEl) verEl.textContent = `${APP_VERSION} · 本地工具`;
 
-  renderAll();
+    renderAll();
+  } catch (err) {
+    console.error('Boot error:', err);
+    showToast('初始化失败：' + err.message);
+  }
+  // 无论是否抛错，splash 必须消失
   setTimeout(() => {
     $('#splash').classList.add('hidden');
     $('#app').classList.remove('hidden');
     const hash = (location.hash || '').replace('#', '');
-    if (['home','timeline','lookbook','settings'].includes(hash)) switchTab(hash);
+    if (['home','timeline','lookbook','settings','assistant'].includes(hash)) switchTab(hash);
     else maybeOnboard();
-  }, 800);
+  }, 600);
 }
 boot();
