@@ -39,6 +39,14 @@
         localStorage.setItem('xiaomiao.v2-launched', '1');
       }
     })();
+
+    /* 版本注入：无论 SW 缓存了什么 HTML，都强制覆盖"关于"卡片里的版本号
+     * 这样不会被 webview / SW 缓存住的旧 about-ver 文本欺骗 */
+    window.__APP_VERSION__ = '2.0.0';
+    document.addEventListener('DOMContentLoaded', function () {
+      var el = document.querySelector('.about-ver');
+      if (el) el.textContent = 'v2.0.0 · 本地工具';
+    });
   </script>
 </head>
 <body>

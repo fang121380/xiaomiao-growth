@@ -3,6 +3,8 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
+const APP_VERSION = 'v2.0.0';
+
 /* ============ 数据存储 ============ */
 const LS_PROFILE = 'xiaomiao.profile';
 const LS_RECORDS = 'xiaomiao.records';
@@ -1456,6 +1458,11 @@ async function boot() {
   state.profile = loadProfile();
   state.records = loadRecords();
   bindEvents();
+
+  // 强制覆盖版本号（防止 SW 缓存的旧 HTML 显示老版本）
+  const verEl = document.querySelector('.about-ver');
+  if (verEl) verEl.textContent = `${APP_VERSION} · 本地工具`;
+
   renderAll();
   setTimeout(() => {
     $('#splash').classList.add('hidden');
