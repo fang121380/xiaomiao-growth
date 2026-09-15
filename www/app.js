@@ -2225,6 +2225,71 @@ async function cleanupLegacySW() {
 }
 
 /* ====================================================================
+ *  返回键 / 边缘滑动返回手势的统一入口
+ *  （由 Android MainActivity.onBackPressed 通过 evaluateJavascript 调用）
+ *
+ *  返回 true  = 已处理，消费这次返回
+ *  返回 false = 不处理，让原生 onBackPressed 走默认（退出 App）
+ *
+ *  层级返回逻辑（从最深层到最外层）：
+ *    1. sheet 开着 → 关 sheet
+ *    2. modal 开着 → 关 modal
+ *    3. 助手 chat-mode → 退出 chat，回到助手主页
+ *    4. timeline 有非 all filter → 重置为 all
+ *    5. 当前不在首页 → 切回首页
+ *    6. 在首页 → 第一次 toast 提示「再按一次退出」，第二次才退出
+ * ==================================================================== */
+let __backPressedOnce = false;
+window.__xiaomiaoBack = function () {
+  // 1. sheet
+  const sheet = document.getElementById('sheet');
+  if (sheet && !sheet.classList.contains('hidden')) {
+    closeSheet._skipBack = true;
+    closeSheet();
+    closeSheet._skipBack = false;
+    return true;
+  }
+  // 2. modal
+  const modal = document.getElementById('modal');
+  if (modal && !modal.classList.contains('hidden')) {
+    closeModal._skipBack = true;
+    closeModal();
+    closeModal._skipBack = false;
+    return true;
+  }
+  // 3. 助手 chat-mode
+  if (typeof Assistant !== 'undefined' && Assistant.chatMode) {
+    Assistant.chatMode = false;
+    document.querySelector('.page[data-page="assistant"]')?.classList.remove('chat-mode');
+    document.getElementById('chatInput')?.blur();
+    showToast('已退出对话');
+    return true;
+  }
+  // 4. timeline 非 all filter
+  if (state.currentPage === 'timeline' && state.currentFilter && state.currentFilter !== 'all') {
+    state.currentFilter = 'all';
+    document.querySelectorAll('#filterTabs .chip').forEach(c => {
+      c.classList.toggle('active', c.dataset.filter === 'all');
+    });
+    renderTimeline();
+    return true;
+  }
+  // 5. 非首页 → 切回首页
+  if (state.currentPage && state.currentPage !== 'home') {
+    switchTab('home');
+    return true;
+  }
+  // 6. 在首页 → 第一次 toast，第二次返回 false（退出 App）
+  if (!__backPressedOnce) {
+    __backPressedOnce = true;
+    showToast('再按一次退出 App', 1800);
+    setTimeout(() => { __backPressedOnce = false; }, 1800);
+    return true;
+  }
+  return false;
+};
+
+/* ====================================================================
  *  启动
  * ==================================================================== */
 async function boot() {
