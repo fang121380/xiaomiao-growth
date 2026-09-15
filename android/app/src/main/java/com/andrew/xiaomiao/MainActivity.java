@@ -1,4 +1,4 @@
-package com.andrew.xiaomao;
+package com.andrew.xiaomiao;
 
 import android.app.DownloadManager;
 import android.content.BroadcastReceiver;
