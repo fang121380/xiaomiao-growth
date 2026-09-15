@@ -1,0 +1,8 @@
+{
+  "build": 4,
+  "version": "v2.2.1",
+  "released": "2026-09-15",
+  "changelog": "首版远程部署到 Cloudflare Pages（xiaomiao-toh.pages.dev）。打开 App 即可远程拉最新。",
+  "force": false,
+  "min_supported_build": 4
+}

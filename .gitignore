@@ -7,8 +7,9 @@ package-lock.json
 yarn.lock
 *.log
 
-# Capacitor 自动同步的 web 副本（与 assets/public 同内容）
-www/
+# Capacitor 自动同步的 web 副本 — 但 www/ 是 CF Pages 部署源，必须跟踪
+# 故使用下方"白名单"：跟踪真实文件，忽略 symlink（symlink 在 www/ 里指向 ../）
+# www/
 
 # 已发布过的 APK 文件
 *.apk

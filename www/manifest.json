@@ -1,0 +1,26 @@
+{
+  "name": "小喵成长记",
+  "short_name": "小喵",
+  "description": "记录小猫成长的本地工具：喂食、体重、用药、生活照片，出生天数自动计算。",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fff1de",
+  "theme_color": "#f5a86b",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
