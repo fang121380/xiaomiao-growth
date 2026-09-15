@@ -88,56 +88,133 @@ window.CAT_BREEDS = [
   { n: '玩具虎猫',       sci: 'Toyger',                             aliases: ['玩具虎'],                              cat: '玩具虎', origin: '美国',     intro: '模仿老虎条纹的家养品种。' },
 ];
 
-/* 搜索算法：模糊匹配中文 / 学名 / 别名 / 分类 */
-function fuzzyScore(item, q) {
-  if (!q) return 1;
-  const lc = s => (s || '').toLowerCase();
-  q = lc(q.trim());
-  if (!q) return 1;
-  const fields = [item.n, item.sci, item.cat, item.origin, ...(item.aliases||[])].map(lc);
-  // 完整包含
-  if (fields.some(f => f.includes(q))) return 3;
-  // 拆字包含
-  const qChars = [...q];
-  const allJoined = fields.join(' ');
-  if (qChars.every(c => allJoined.includes(c))) return 2;
-  // 学名或简称首字母
-  const sciInitials = (item.sci||'').split(/\s+/).map(w => w[0]||'').join('').toLowerCase();
-  if (sciInitials.startsWith(q)) return 1.5;
-  return 0;
+/* 搜索算法：模糊匹配 + 编辑距离
+ * 评分体系（借鉴 Codex）：
+ *   100 = 完全匹配
+ *    80+len = 包含
+ *    55+len = 反向包含
+ *    30 = 编辑距离 ≤ 2
+ * 拆字匹配和学名首字母作为额外加分
+ */
+function normalizeStr(s) {
+  return (s || '').toLowerCase()
+    .replace(/[\s·\-_()（）]/g, '');
 }
 
-window.searchBreeds = function(query, limit = 12) {
-  const list = window.CAT_BREEDS;
-  if (!query || !query.trim()) {
-    // 默认返回热门（前 12）
-    return list.slice(0, limit);
+function editDistance(a, b) {
+  if (a.length > 24 || b.length > 24) return 99;
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const table = new Array(b.length + 1);
+  for (let j = 0; j <= b.length; j++) table[j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    let prev = i - 1;
+    table[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = table[j];
+      table[j] = a[i - 1] === b[j - 1]
+        ? prev
+        : Math.min(table[j] + 1, table[j - 1] + 1, prev + 1);
+      prev = tmp;
+    }
   }
-  const scored = list.map(it => ({ it, s: fuzzyScore(it, query) }))
-                     .filter(x => x.s > 0)
-                     .sort((a, b) => b.s - a.s)
-                     .slice(0, limit);
-  return scored.map(x => x.it);
+  return table[b.length];
+}
+
+function fuzzyScore(item, q) {
+  if (!q) return 1;
+  const nq = normalizeStr(q.trim());
+  if (!nq) return 1;
+  const fields = [item.n, item.sci, item.cat, item.origin, ...(item.aliases || [])]
+    .map(normalizeStr);
+  let best = 0;
+  for (const f of fields) {
+    if (!f) continue;
+    if (f === nq) best = Math.max(best, 100);
+    else if (f.includes(nq)) best = Math.max(best, 80 + nq.length);
+    else if (nq.includes(f)) best = Math.max(best, 55 + f.length);
+    else if (Math.abs(f.length - nq.length) <= 2 && editDistance(f, nq) <= 2) {
+      best = Math.max(best, 30);
+    }
+  }
+  if (best === 0) {
+    // 拆字匹配（中文场景）
+    const qChars = [...q.trim()];
+    const allJoined = fields.join('');
+    if (qChars.length > 1 && qChars.every(c => allJoined.includes(c))) best = 25;
+    // 学名首字母（如 "bs" → "British Shorthair"）
+    const sciInitials = (item.sci || '').split(/\s+/).map(w => w[0] || '').join('').toLowerCase();
+    if (sciInitials.startsWith(nq) && nq.length >= 2) best = Math.max(best, 20);
+  }
+  return best;
+}
+
+window.searchBreeds = function (query, limit = 12) {
+  const list = window.CAT_BREEDS;
+  if (!query || !query.trim()) return list.slice(0, limit);
+  return list.map(it => ({ it, s: fuzzyScore(it, query) }))
+    .filter(x => x.s > 0)
+    .sort((a, b) => b.s - a.s)
+    .slice(0, limit)
+    .map(x => x.it);
 };
 
-/* 在线搜索：调用 catfact.ninja（无需 key）。失败时返回空数组 */
-window.searchBreedsOnline = async function(query, limit = 10) {
+/* 在线搜索：调用中文维基百科 API，更适合中文品种名
+ * 用户输入"金渐层" → "英短金渐层"也能搜到
+ * 失败时回退到 catfact.ninja
+ */
+window.searchBreedsOnline = async function (query, limit = 8) {
+  if (!query || !query.trim() || query.trim().length < 2) {
+    return { error: '请至少输入两个字再联网搜索' };
+  }
+  // 1. 优先：中文维基百科
   try {
-    const r = await fetch(`https://catfact.ninja/breeds?limit=100`, { mode: 'cors' });
+    const encoded = encodeURIComponent(query.trim() + ' 猫');
+    const url = `https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encoded}&format=json&origin=*&srlimit=${limit}`;
+    const r = await fetch(url, {
+      headers: { 'User-Agent': 'CatGrowth/2.0 (breed lookup)' },
+    });
+    if (r.ok) {
+      const data = await r.json();
+      const found = data?.query?.search || [];
+      const results = [];
+      const seen = new Set();
+      for (const item of found) {
+        const title = (item.title || '').trim();
+        if (title && !seen.has(title)) {
+          seen.add(title);
+          results.push({
+            n: title,
+            sci: title,
+            cat: '维基百科',
+            origin: '在线结果',
+            intro: (item.snippet || '').replace(/<[^>]+>/g, '').slice(0, 60),
+            online: true,
+          });
+        }
+      }
+      if (results.length) return results;
+    }
+  } catch (e) { /* 维基失败回退 */ }
+  // 2. 回退：catfact.ninja（英文品种）
+  try {
+    const r = await fetch('https://catfact.ninja/breeds?limit=100');
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
     const all = data.data || [];
-    const lc = s => (s || '').toLowerCase();
-    const q = lc(query.trim());
-    const matched = all.filter(b => lc(b.breed).includes(q) || lc(b.origin).includes(q));
-    return matched.slice(0, limit).map(b => ({
-      n: b.breed,
-      sci: b.breed,
-      cat: '在线结果',
-      origin: b.origin || '',
-      intro: (b.coat || '') + (b.pattern ? ' / ' + b.pattern : ''),
-      online: true,
-    }));
+    const q = query.trim().toLowerCase();
+    return all
+      .filter(b => b.breed.toLowerCase().includes(q) || (b.origin || '').toLowerCase().includes(q))
+      .slice(0, limit)
+      .map(b => ({
+        n: b.breed,
+        sci: b.breed,
+        cat: '英文品种',
+        origin: b.origin || '',
+        intro: (b.coat || '') + (b.pattern ? ' / ' + b.pattern : ''),
+        online: true,
+      }));
   } catch (e) {
     return { error: e.message };
   }

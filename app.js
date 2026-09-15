@@ -3,7 +3,7 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.0.0';
+const APP_VERSION = 'v2.1.0';
 
 /* ============ 数据存储 ============ */
 const LS_PROFILE = 'xiaomiao.profile';
@@ -1179,6 +1179,27 @@ const Assistant = {
     this.renderMessages();
   },
 
+  /* 紧急信号检测（借鉴 Codex PetCareKnowledge.urgentFor）
+   * 命中时在 AI 回答顶部加一条红色警示，引导立即就医
+   */
+  URGENT_KEYWORDS: [
+    '尿不出', '无尿', '排不出尿', '尿闭',
+    '张口呼吸', '呼吸困难', '喘不上气', '喘',
+    '抽搐', '抽筋', '痉挛', '昏迷', '晕倒', '休克',
+    '无法站立', '站不起来', '瘫倒',
+    '误食', '吞异物', '中毒', '中毒迹象',
+    '血便', '便血', '黑便', '吐血', '呕血',
+    '严重外伤', '大出血', '车祸', '摔伤',
+    '持续呕吐', '频繁呕吐', '吐个不停',
+  ],
+
+  detectUrgent(text) {
+    if (!text) return false;
+    return this.URGENT_KEYWORDS.some(k => text.includes(k));
+  },
+
+  URGENT_BANNER: '⚠️ 你描述的情况可能是急症。请立即停止自行处理，联系最近的 24 小时宠物医院或急诊兽医。路上保持环境安静、保暖，避免应激。',
+
   async callDeepSeek(text) {
     const apiKey = window.DEEPSEEK_API_KEY;
     if (!apiKey) throw new Error('未配置 API Key（config.js）');
@@ -1187,18 +1208,22 @@ const Assistant = {
       .filter(m => m.content !== '__TYPING__')
       .map(m => ({ role: m.role, content: m.content }));
 
+    const isUrgent = this.detectUrgent(text);
+
     const sysMsg = {
       role: 'system',
-      content: `你是一位经验丰富的宠物医生，专门为养猫人士提供专业、温暖、易懂的建议。
+      content: `你是中文养猫健康知识咨询助手，专门帮养猫人士整理观察要点、提供常识级照护建议。
 
-回答要求：
-1. 用中文，口语化、有温度，像朋友聊天，不要用书面语
-2. 如果情况紧急或严重，明确建议尽快去宠物医院
-3. 不要给具体药物剂量，只说一般处理思路
-4. 必要时列出可能的几种情况让用户自查
-5. 回答控制在 250 字以内（紧急情况可适当延长）
-6. 不要重复用户的问题
-7. 末尾给一个温馨的小提醒`,
+严格边界：
+- 不要声称自己是兽医，不要确诊，不要给药物剂量、处方或替代就医的方案
+- 任何给主人的具体用药/剂量建议都拒绝，统一回复「用药需由兽医面诊后开具」
+- 不要做影像学/化验单解读
+- 遇到尿不出、呼吸费力/张口呼吸、抽搐、昏迷、严重外伤、误食毒物或异物、持续呕吐、黑便/血便等急症信号，必须在回答开头明确建议立即联系急诊兽医
+
+回答风格：
+- 用简洁中文，先给安全判断，再给可记录的观察要点和下一步
+- 如果信息不足，礼貌询问：年龄、持续时间、次数、食欲、饮水、精神状态、已知接触物
+- 末尾给一句温和提醒，但不重复用户问题`,
     };
 
     const res = await fetch(window.DEEPSEEK_API_URL, {
@@ -1210,8 +1235,8 @@ const Assistant = {
       body: JSON.stringify({
         model: window.DEEPSEEK_MODEL || 'deepseek-chat',
         messages: [sysMsg, ...cleanHistory],
-        temperature: 0.7,
-        max_tokens: 800,
+        temperature: 0.2,
+        max_tokens: 700,
       }),
     });
 
@@ -1222,8 +1247,13 @@ const Assistant = {
     }
 
     const data = await res.json();
-    const content = data.choices?.[0]?.message?.content;
+    let content = data.choices?.[0]?.message?.content;
     if (!content) throw new Error('返回为空');
+
+    // 前置紧急横幅（前端保险，避免模型偶尔漏掉）
+    if (isUrgent && !content.includes('急诊') && !content.includes('立即就医')) {
+      content = `${this.URGENT_BANNER}\n\n${content}`;
+    }
     return content;
   },
 };
