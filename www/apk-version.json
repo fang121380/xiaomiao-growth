@@ -1,7 +1,7 @@
 {
-  "versionCode": 7,
-  "versionName": "2.2.3",
+  "versionCode": 8,
+  "versionName": "v2.2.3-test",
   "downloadUrl": "https://xiaomiao-toh.pages.dev/www/xiaomiao-v2.2.3.apk",
-  "changelog": "修复 Android 边缘返回手势（JS 全权接管层级返回）：sheet/modal 关闭、助手 chat 退出、timeline filter 重置、切回首页、首页再按一次退出",
+  "changelog": "🧪 测试自动更新：App 应该弹紫色横幅，点'立即更新'会下载同一个 APK，安装后 versionCode 仍为 7（测试完改回 8 → 7）",
   "force": false
 }
