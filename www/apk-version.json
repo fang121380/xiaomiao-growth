@@ -1,7 +1,7 @@
 {
-  "versionCode": 7,
-  "versionName": "2.2.3",
-  "downloadUrl": "https://xiaomiao-toh.pages.dev/www/xiaomiao-v2.2.3.apk",
-  "changelog": "修复 Android 边缘返回手势（JS 全权接管层级返回）：sheet/modal 关闭、助手 chat 退出、timeline filter 重置、切回首页、首页再按一次退出",
+  "versionCode": 8,
+  "versionName": "2.2.4",
+  "downloadUrl": "https://xiaomiao-toh.pages.dev/www/xiaomiao-v2.2.4.apk",
+  "changelog": "修复 Android 边缘滑动返回手势（注册 OnBackInvokedCallback 拦截 predictive back gesture，targetSdk 36 才能用），现 sheet/modal/助手 chat/timeline filter/非首页切换都按层级返回，首页双击退出",
   "force": false
 }

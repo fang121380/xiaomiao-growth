@@ -11,6 +11,8 @@ import android.os.Environment;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
 import android.webkit.WebView;
+import android.window.OnBackInvokedCallback;
+import android.window.OnBackInvokedDispatcher;
 import com.getcapacitor.BridgeActivity;
 
 import java.io.File;
@@ -18,12 +20,76 @@ import java.io.File;
 public class MainActivity extends BridgeActivity {
 
   private long currentDownloadId = -1;
+  private OnBackInvokedCallback backCallback = null;
 
   /**
    * 重写系统返回按钮 / 边缘滑动返回手势：
    * 1. 先调 JS 的 window.__xiaomiaoBack() —— JS 内部按层级返回
    * 2. JS 返回 false 才走默认退出 App
+   *
+   * targetSdk 33+ (Android 13+) predictive back gesture 默认启用，
+   * 完全绕过 onBackPressed()，只走 OnBackInvokedDispatcher。
+   * 所以必须注册 OnBackInvokedCallback 才能拦截边缘手势。
+   * onBackPressed 仍保留作为低版本 fallback 与物理键的兜底。
    */
+  @Override
+  public void onStart() {
+    super.onStart();
+    registerBackCallback();
+    setupDownloadHandler();
+  }
+
+  @Override
+  public void onStop() {
+    super.onStop();
+    if (backCallback != null) {
+      try {
+        getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);
+      } catch (Exception ignored) {}
+      backCallback = null;
+    }
+  }
+
+  private void registerBackCallback() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+      // Android 12 及以下：onBackPressed 会被调用，单独路径处理
+      return;
+    }
+    if (backCallback != null) return;
+
+    backCallback = () -> {
+      WebView webView = this.bridge.getWebView();
+      if (webView == null) {
+        finish();
+        return;
+      }
+      webView.evaluateJavascript(
+        "(function() { " +
+        "  try { " +
+        "    if (window.__xiaomiaoBack) { " +
+        "      return window.__xiaomiaoBack() ? '1' : '0'; " +
+        "    } " +
+        "  } catch (e) {} " +
+        "  return '0'; " +
+        "})()",
+        value -> {
+          if ("\"0\"".equals(value) || "0".equals(value)) {
+            // JS 没消费 → 退出 App
+            finish();
+          }
+        }
+      );
+    };
+    try {
+      getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+          OnBackInvokedDispatcher.PRIORITY_OVERLAY,
+          backCallback
+      );
+    } catch (Exception e) {
+      android.util.Log.e("XiaomiaoBack", "注册返回回调失败: " + e.getMessage(), e);
+    }
+  }
+
   @Override
   public void onBackPressed() {
     WebView webView = this.bridge.getWebView();
@@ -60,9 +126,7 @@ public class MainActivity extends BridgeActivity {
    *   - 下载完调起安装（这里）
    *   - 用户点"安装"完成升级（系统强制要求）
    */
-  @Override
-  public void onStart() {
-    super.onStart();
+  private void setupDownloadHandler() {
     WebView webView = this.bridge.getWebView();
     if (webView == null) return;
 
