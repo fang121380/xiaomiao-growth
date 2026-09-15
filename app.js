@@ -4,6 +4,7 @@
  * ==================================================================== */
 
 const APP_VERSION = 'v2.2.3';
+const APK_VERSION_CODE = 7;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 体重单位（输入 g，存储 g，展示 kg） ============ */
 const fmtKg = g => g ? (Number(g) / 1000).toFixed(2) + ' kg' : '—';
@@ -2325,6 +2326,7 @@ async function boot() {
 
   // 启动后异步检查更新（不阻塞 UI）
   checkRemoteUpdate();
+  checkApkUpdate();
 }
 
 /* ====================================================================
@@ -2373,4 +2375,67 @@ async function checkRemoteUpdate() {
     // 离线 / 没部署 / 跨域 → 静默忽略
   }
 }
+
+/* ====================================================================
+ *  APK 版本检测
+ *  App 内提示"有新版本可用"，用户点"立即更新"→ App 内下载 APK
+ *  → 下载完成自动调起 Android 系统安装界面
+ *
+ *  ⚠️ 关键区别：
+ *    - checkRemoteUpdate() 检测 web 资源更新（HTML/JS/CSS/SW）
+ *    - checkApkUpdate() 检测原生 APK 更新（Java 改动、Gradle 配置）
+ *
+ *  配置：在 www/apk-version.json 里改 versionCode
+ * ==================================================================== */
+async function checkApkUpdate() {
+  try {
+    const r = await fetch('https://xiaomiao-toh.pages.dev/www/apk-version.json?_=' + Date.now(), {
+      cache: 'no-store',
+      mode: 'cors',
+    });
+    if (!r.ok) return;
+    const info = await r.json();
+    if (!info.versionCode || info.versionCode <= APK_VERSION_CODE) return;
+
+    showApkUpdateBanner(info);
+  } catch (e) {
+    // 离线 / 跨域 → 静默忽略
+  }
+}
+
+function showApkUpdateBanner(info) {
+  // 避免重复弹
+  if (document.getElementById('apk-update-banner')) return;
+
+  const banner = document.createElement('div');
+  banner.id = 'apk-update-banner';
+  banner.className = 'apk-update-banner';
+  banner.innerHTML = `
+    <div class="apk-update-text">
+      <strong>📱 ${info.versionName || '新版本'} 已就绪</strong>
+      <span>${info.changelog || '点击立即更新'}</span>
+    </div>
+    <button class="apk-update-btn">立即更新</button>
+    <button class="apk-update-close" aria-label="关闭">×</button>
+  `;
+  document.body.appendChild(banner);
+  setTimeout(() => banner.classList.add('show'), 50);
+
+  banner.querySelector('.apk-update-btn').addEventListener('click', () => {
+    showToast('开始下载 APK，下载完成后会自动调起安装', 2500);
+    // 用 <a download> 触发 WebView 的下载监听（MainActivity 里接管 → DownloadManager）
+    const a = document.createElement('a');
+    a.href = info.downloadUrl;
+    a.download = `xiaomiao-${info.versionName || 'update'}.apk`;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  });
+  banner.querySelector('.apk-update-close').addEventListener('click', () => {
+    banner.classList.remove('show');
+    setTimeout(() => banner.remove(), 300);
+  });
+}
+
 boot();

@@ -1950,6 +1950,66 @@ body {
   opacity: .85;
 }
 
+/* APK 更新横幅（区别于 web 热更新横幅，紫色更显眼） */
+.apk-update-banner {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 10000;
+  background: linear-gradient(135deg, #6e7afd, #4a5ce0);
+  color: #fff;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 4px 20px rgba(74, 92, 224, .35);
+  transform: translateY(-100%);
+  transition: transform .35s cubic-bezier(.4, 1.4, .6, 1);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.apk-update-banner.show { transform: translateY(0); }
+.apk-update-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.apk-update-text strong { font-size: 15px; font-weight: 600; }
+.apk-update-text span {
+  font-size: 12px;
+  opacity: .92;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.apk-update-btn {
+  background: #fff;
+  color: #4a5ce0;
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform .15s;
+}
+.apk-update-btn:active { transform: scale(.95); }
+.apk-update-close {
+  background: transparent;
+  border: 0;
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  flex-shrink: 0;
+  opacity: .85;
+}
+
 /* ====================================================================
  *  首页体重趋势图
  * ==================================================================== */
