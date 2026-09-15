@@ -52,8 +52,11 @@ export async function onRequestPost(context) {
       status: upstream.status,
       headers: {
         'Content-Type': 'application/json',
-        // 允许所有源（CORS 友好，虽然是同源调用）
+        // 允许任意 origin 调用（App WebView 通过 Capacitor androidScheme=https://localhost 加载，
+        // 跨 origin 调这里必须显式允许）
         'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
       },
     });
   } catch (err) {

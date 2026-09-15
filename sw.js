@@ -28,11 +28,24 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;
-  if (req.method !== 'GET') return;
+  if (req.method !== 'GET' && req.method !== 'POST') return;
   const url = new URL(req.url);
   // 只处理同源 + capacitor scheme
   if (url.origin !== self.location.origin &&
       !url.protocol.startsWith('capacitor')) return;
+
+  // /api/* 路径代理到 CF Pages Functions（同源限制下绕开 WebView 跨域拦截）
+  if (url.pathname.startsWith('/api/')) {
+    const target = 'https://xiaomiao-toh.pages.dev' + url.pathname + url.search;
+    e.respondWith(fetch(target, {
+      method: req.method,
+      headers: req.headers,
+      body: req.body,
+      mode: 'cors',
+      credentials: 'omit',
+    }));
+    return;
+  }
 
   e.respondWith(
     fetch(req)

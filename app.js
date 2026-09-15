@@ -1521,8 +1521,9 @@ const Assistant = {
 - 末尾给一句温和提醒，但不重复用户问题`,
     };
 
-    // 走 CF Pages Functions 同源代理（/api/deepseek），避开 Android WebView 跨域 POST 拦截
-    const res = await fetch('/api/deepseek', {
+    // 直接打绝对 URL（CF Pages Function），避开 Android WebView SW 注册失败的问题
+    // server 端已配 Access-Control-Allow-Origin: *
+    const res = await fetch('https://xiaomiao-toh.pages.dev/api/deepseek', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
