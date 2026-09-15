@@ -6,6 +6,7 @@
     "allowMixedContent": false,
     "backgroundColor": "#fff1de",
     "allowNavigation": [
+      "https://xiaomiao-toh.pages.dev",
       "https://xiaomiao.pages.dev",
       "https://fang121380.github.io"
     ]
@@ -13,7 +14,7 @@
   "server": {
     "androidScheme": "https",
     "cleartext": false,
-    "url": "https://xiaomiao.pages.dev",
+    "url": "https://xiaomiao-toh.pages.dev",
     "iosScheme": "https"
   }
 }
