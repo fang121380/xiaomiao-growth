@@ -1,6 +1,34 @@
 # 版本演进历史
 
-## v2.2.1（2026-09-15）— 当前版本
+## v2.2.3（2026-09-15）— 当前版本
+
+- 🐛 体重单位统一：输入仍为 g，所有显示处统一除以 1000 显示 kg（趋势图/stat
+  卡/最近记录/时间线列表）
+- 🐛 首页去重：删除「最近体重」stat 卡，体重完全交给趋势图展示（避免 4 次重复）
+- 🐛 设置页健康提醒改为折叠 accordion（3 组：疫苗/体内驱虫/体外驱虫），
+  头部状态徽章实时显示「上次 X」或「下次 X」或「未设置」
+- 🐛 首页 stat 卡点击可跳转：出生天数 → 设置页；生活记录 → 记录 tab；
+  照片 → 相册 tab
+- 🐛 AI 医生改用 CF Pages Functions 同源代理（`/api/deepseek`），解决
+  Android WebView 跨域 POST 拦截导致的「Failed to fetch」（curl 测试 API
+  key 和 CORS 都正常，但 WebView 仍会拒，所以走同源代理最稳）
+- 🐛 子页面（sheet/modal）支持 Android 返回键/边缘手势返回：通过
+  `history.pushState` + `popstate` 监听实现
+- ➕ 新增文件 `functions/api/deepseek.js`（CF Pages 自动部署）
+
+## v2.2.2（2026-09-15）
+
+- 🐛 修复首页浮动 + 按钮不显示的 bug
+
+  根因：`ensureFab()` 用 `document.querySelector('.fab')` 判断是否已存在 FAB，
+  但 timeline 页的静态 `<button class="fab" id="fabAdd">` 也匹配 `.fab`，所以
+  home 页调用 ensureFab 时直接 return，永远不创建。
+
+  修复：动态 FAB 加独特 class `fab-home`，early-return 改为只查 `.fab-home`；
+  新增 `updateFabVisibility()` 在 switchTab 时同步两个 FAB 的显示/隐藏（home
+  显示 fab-home，timeline 显示 #fabAdd，其他页都不显示）。
+
+## v2.2.1（2026-09-15）
 
 **里程碑：远程热更新架构上线**
 

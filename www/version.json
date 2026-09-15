@@ -1,8 +1,8 @@
 {
-  "build": 4,
-  "version": "v2.2.1",
+  "build": 6,
+  "version": "v2.2.3",
   "released": "2026-09-15",
-  "changelog": "首版远程部署到 Cloudflare Pages（xiaomiao-toh.pages.dev）。打开 App 即可远程拉最新。",
+  "changelog": "5 个 bug 修复：①体重单位统一改 kg 显示（输入仍为 g）；②首页去重 1 张 stat 卡，避免体重出现 4 次；③设置页健康提醒改为折叠 accordion（3 组：疫苗/体内驱虫/体外驱虫），状态徽章显示「上次/下次日期」；④首页 stat 卡点击可跳转（出生天数→设置、生活记录→记录 tab、照片→相册 tab）；⑤AI 医生改用 CF Pages Functions 同源代理（/api/deepseek），解决 Android WebView 跨域 POST 拦截导致的「Failed to fetch」；⑥子页面（sheet/modal）支持 Android 返回键/边缘手势返回",
   "force": false,
   "min_supported_build": 4
 }

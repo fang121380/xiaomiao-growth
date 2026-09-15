@@ -3,7 +3,11 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.2.1';
+const APP_VERSION = 'v2.2.3';
+
+/* ============ 体重单位（输入 g，存储 g，展示 kg） ============ */
+const fmtKg = g => g ? (Number(g) / 1000).toFixed(2) + ' kg' : '—';
+const fmtKgNum = g => g ? (Number(g) / 1000).toFixed(2) : '—';
 
 /* ============ 数据存储 ============ */
 const LS_PROFILE = 'xiaomiao.profile';
@@ -182,12 +186,16 @@ function saveRecords(list) {
 function openSheet(html) {
   $('#sheetContent').innerHTML = html;
   $('#sheet').classList.remove('hidden');
+  history.pushState({ sheet: true }, '');
 }
 function closeSheet() {
   $('#sheet').classList.add('hidden');
   $('#sheetContent').innerHTML = '';
   state.pendingPhotos = [];
+  // 如果这次关闭是被 popstate 触发的，history 已经回退一格，不要再 back()
+  if (!closeSheet._skipBack) history.back();
 }
+closeSheet._skipBack = false;
 $('#sheet').addEventListener('click', e => {
   if (e.target.matches('[data-close], .sheet-mask')) closeSheet();
 });
@@ -198,13 +206,29 @@ $('#sheet').addEventListener('click', e => {
 function openModal(html) {
   $('#modalContent').innerHTML = html;
   $('#modal').classList.remove('hidden');
+  history.pushState({ modal: true }, '');
 }
 function closeModal() {
   $('#modal').classList.add('hidden');
   $('#modalContent').innerHTML = '';
+  if (!closeModal._skipBack) history.back();
 }
+closeModal._skipBack = false;
 $('#modal').addEventListener('click', e => {
   if (e.target.matches('[data-close], .modal-mask')) closeModal();
+});
+
+// Android 系统返回 / WebView 边缘返回手势 → 关掉最上层的 sheet/modal
+window.addEventListener('popstate', () => {
+  if (!$('#sheet').classList.contains('hidden')) {
+    closeSheet._skipBack = true;
+    closeSheet();
+    closeSheet._skipBack = false;
+  } else if (!$('#modal').classList.contains('hidden')) {
+    closeModal._skipBack = true;
+    closeModal();
+    closeModal._skipBack = false;
+  }
 });
 
 /* ====================================================================
@@ -660,7 +684,7 @@ async function renderHome() {
   $('#statDays').textContent = p?.birthDate ? daysBetween(p.birthDate, new Date()) : '—';
   $('#statRecords').textContent = state.records.length;
   const lastW = [...state.records].reverse().find(r => r.type === 'weight');
-  $('#statWeight').textContent = lastW ? lastW.value : '—';
+  $('#statWeight').textContent = lastW ? fmtKgNum(lastW.value) : '—';
 
   const photoCount = state.records.reduce((s, r) => s + (r.photos?.length || 0), 0);
   $('#statPhotos').textContent = photoCount;
@@ -692,7 +716,7 @@ async function renderHome() {
         <div class="recent-item">
           <div class="recent-ico" style="background:${t.color};color:${t.textColor}">${t.emoji}</div>
           <div class="recent-main">
-            <div class="recent-title">${escapeHtml(r.title || t.label)}${r.value ? ` · ${escapeHtml(r.value)}` : ''}</div>
+            <div class="recent-title">${escapeHtml(r.title || t.label)}${r.value ? ` · ${r.type === 'weight' ? escapeHtml(fmtKg(r.value)) : escapeHtml(r.value)}` : ''}</div>
             <div class="recent-meta">${fmtDateTime(r.createdAt)} · ${escapeHtml((r.note || '').slice(0, 30))}</div>
           </div>
           <span class="recent-arrow">›</span>
@@ -739,12 +763,12 @@ function renderWeightChart() {
     <div class="weight-chart">
       <div class="weight-chart-head">
         <div class="weight-chart-title">📊 体重趋势</div>
-        <div class="weight-chart-now">${latest.w.toFixed(2)}<small>kg</small></div>
+        <div class="weight-chart-now">${fmtKgNum(latest.w)}<small>kg</small></div>
       </div>
       <canvas class="weight-chart-canvas" width="600" height="240"></canvas>
       <div class="weight-chart-stats">
-        <span>最高 <b>${max.toFixed(2)}</b>kg</span>
-        <span>最低 <b>${min.toFixed(2)}</b>kg</span>
+        <span>最高 <b>${fmtKgNum(max)}</b>kg</span>
+        <span>最低 <b>${fmtKgNum(min)}</b>kg</span>
         <span>共 <b>${items.length}</b> 次</span>
       </div>
     </div>`;
@@ -776,7 +800,7 @@ function renderWeightChart() {
     ctx.font = '10px system-ui';
     ctx.textAlign = 'right';
     const v = yMax - (i / 4) * (yMax - yMin);
-    ctx.fillText(v.toFixed(2), padL - 4, y + 3);
+    ctx.fillText(fmtKgNum(v), padL - 4, y + 3);
   }
 
   // 填充区域
@@ -887,9 +911,10 @@ function renderVaccineReminder() {
  *  浮动 + 按钮（4 种快捷记录）
  * ==================================================================== */
 function ensureFab() {
-  if (document.querySelector('.fab')) return;
+  // 只检查自己创建的 fab-home；timeline 静态的 #fabAdd 也是 .fab，不能误判
+  if (document.querySelector('.fab-home')) return;
   const fab = document.createElement('button');
-  fab.className = 'fab';
+  fab.className = 'fab fab-home';
   fab.setAttribute('aria-label', '快速记录');
   fab.textContent = '＋';
   const menu = document.createElement('div');
@@ -924,6 +949,20 @@ function ensureFab() {
       openRecordSheet(el.dataset.type);
     });
   });
+
+  updateFabVisibility();
+}
+
+// 控制两个 FAB 的可见性：
+//   home 页 → 显示 .fab-home（带菜单），隐藏 #fabAdd（timeline 的）
+//   timeline 页 → 显示 #fabAdd，隐藏 .fab-home
+//   其他页 → 都不显示（settings/assistant/相册 都没有 + 按钮）
+function updateFabVisibility() {
+  const isHome = state.currentPage === 'home';
+  const fabHome = document.querySelector('.fab-home');
+  const fabTimeline = document.getElementById('fabAdd');
+  if (fabHome) fabHome.style.display = isHome ? 'flex' : 'none';
+  if (fabTimeline) fabTimeline.style.display = isHome ? 'none' : '';
 }
 
 function renderTimeline() {
@@ -994,7 +1033,7 @@ function renderTimelineItem(r) {
       <div class="tl-main">
         <div class="tl-title">
           <span>${escapeHtml(r.title || t.label)}</span>
-          ${r.value ? `<span class="tl-value">· ${escapeHtml(r.value)}</span>` : ''}
+          ${r.value ? `<span class="tl-value">· ${r.type === 'weight' ? escapeHtml(fmtKg(r.value)) : escapeHtml(r.value)}</span>` : ''}
         </div>
         ${r.note ? `<div class="tl-desc">${escapeHtml(r.note)}</div>` : ''}
         ${photosHtml}
@@ -1047,6 +1086,32 @@ async function renderLookbook() {
       if (imgEl) imgEl.src = URL.createObjectURL(blob);
     } catch {}
   }
+}
+
+// 更新健康提醒 accordion 头部状态徽章
+function updateHealthAccordionStatus() {
+  const p = state.profile || {};
+  const groups = {
+    vaccine:  { last: 'lastVaccineDate',      next: 'nextVaccineDate' },
+    deworm:   { last: 'lastDewormDate',       next: 'nextDewormDate' },
+    extDeworm:{ last: 'lastExternalDewormDate', next: 'nextExternalDewormDate' },
+  };
+  Object.entries(groups).forEach(([key, fields]) => {
+    const el = document.querySelector(`.acc-status[data-status="${key}"]`);
+    if (!el) return;
+    const next = p[fields.next];
+    const last = p[fields.last];
+    if (next) {
+      el.textContent = '下次 ' + next;
+      el.classList.add('has-value');
+    } else if (last) {
+      el.textContent = '上次 ' + last;
+      el.classList.add('has-value');
+    } else {
+      el.textContent = '未设置';
+      el.classList.remove('has-value');
+    }
+  });
 }
 
 function renderProfileForm() {
@@ -1434,9 +1499,6 @@ const Assistant = {
   URGENT_BANNER: '⚠️ 你描述的情况可能是急症。请立即停止自行处理，联系最近的 24 小时宠物医院或急诊兽医。路上保持环境安静、保暖，避免应激。',
 
   async callDeepSeek(text) {
-    const apiKey = window.DEEPSEEK_API_KEY;
-    if (!apiKey) throw new Error('未配置 API Key（config.js）');
-
     const cleanHistory = this.history
       .filter(m => m.content !== '__TYPING__')
       .map(m => ({ role: m.role, content: m.content }));
@@ -1459,17 +1521,13 @@ const Assistant = {
 - 末尾给一句温和提醒，但不重复用户问题`,
     };
 
-    const res = await fetch(window.DEEPSEEK_API_URL, {
+    // 走 CF Pages Functions 同源代理（/api/deepseek），避开 Android WebView 跨域 POST 拦截
+    const res = await fetch('/api/deepseek', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: window.DEEPSEEK_MODEL || 'deepseek-chat',
         messages: [sysMsg, ...cleanHistory],
-        temperature: 0.2,
-        max_tokens: 700,
       }),
     });
 
@@ -1854,6 +1912,7 @@ function switchTab(name) {
       p.classList.toggle('active', active);
     }
   });
+  updateFabVisibility();
   if (name === 'home') renderHome();
   if (name === 'timeline') renderTimeline();
   if (name === 'lookbook') renderLookbook();
@@ -1987,6 +2046,11 @@ function bindEvents() {
     openRecordSheet(b.dataset.action);
   }));
 
+  // 首页 - stat 卡片点击跳转
+  $$('.stat-card[data-jump]').forEach(card => {
+    card.addEventListener('click', () => switchTab(card.dataset.jump));
+  });
+
   // 时间线页
   $('#fabAdd').addEventListener('click', () => openRecordSheet());
   $('#filterTabs').addEventListener('click', e => {
@@ -2085,9 +2149,22 @@ function bindEvents() {
         el.classList.add('has-value');
         el.querySelector('.picker-text').textContent = val;
         el.querySelector('.picker-text').classList.remove('placeholder');
+        updateHealthAccordionStatus();
       });
     });
   });
+
+  // 健康提醒 - 折叠交互
+  $$('.accordion-head[data-target]').forEach(head => {
+    head.addEventListener('click', () => {
+      const target = head.dataset.target;
+      const body = document.getElementById(target);
+      if (!body) return;
+      head.classList.toggle('open');
+      body.classList.toggle('open');
+    });
+  });
+  updateHealthAccordionStatus();
 
   // 设置 - 表单提交
   $('#profileForm').addEventListener('submit', e => {
@@ -2188,7 +2265,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 4;  // 与 www/version.json 同步
+const LOCAL_BUILD = 6;  // 与 www/version.json 同步
 let remoteUpdateInfo = null;
 
 async function checkRemoteUpdate() {

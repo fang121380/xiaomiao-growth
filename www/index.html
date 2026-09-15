@@ -45,7 +45,7 @@
     window.__APP_VERSION__ = '2.1.0';
     document.addEventListener('DOMContentLoaded', function () {
       var el = document.querySelector('.about-ver');
-      if (el) el.textContent = 'v2.2.1 · 自动更新';
+      if (el) el.textContent = 'v2.2.3 · 自动更新';
     });
   </script>
 </head>
@@ -112,30 +112,23 @@
           </button>
         </div>
 
-        <!-- 4 个统计卡片 2x2 -->
+        <!-- 统计卡片（3 个：体重由下方趋势图承担，避免重复） -->
         <div class="stats-grid">
-          <div class="stat-card">
+          <div class="stat-card" data-jump="settings">
             <div class="stat-icon" style="--ic:#FFE0CC;--ic2:#F5A86B">🎂</div>
             <div class="stat-info">
               <div class="stat-num" id="statDays">—</div>
               <div class="stat-label">出生天数</div>
             </div>
           </div>
-          <div class="stat-card">
+          <div class="stat-card" data-jump="timeline">
             <div class="stat-icon" style="--ic:#D6F0D2;--ic2:#5FA82C">📖</div>
             <div class="stat-info">
               <div class="stat-num" id="statRecords">0</div>
               <div class="stat-label">生活记录</div>
             </div>
           </div>
-          <div class="stat-card">
-            <div class="stat-icon" style="--ic:#CFE7F5;--ic2:#3D8AB8">⚖️</div>
-            <div class="stat-info">
-              <div class="stat-num" id="statWeight">—</div>
-              <div class="stat-label">最近体重</div>
-            </div>
-          </div>
-          <div class="stat-card">
+          <div class="stat-card" data-jump="lookbook">
             <div class="stat-icon" style="--ic:#F5DCE6;--ic2:#D85A8A">📷</div>
             <div class="stat-info">
               <div class="stat-num" id="statPhotos">0</div>
@@ -284,54 +277,82 @@
               <input type="hidden" name="adoptDate" />
             </label>
             <div class="form-section-title">健康提醒（可选）</div>
-            <label class="field">
-              <span class="field-label">上次疫苗日</span>
-              <div class="field-picker" id="lastVaccinePicker">
-                <span class="picker-text">点击选择</span>
-                <span class="picker-arrow">›</span>
+            <div class="accordion-group">
+              <div class="accordion-head" data-target="vaccine">
+                <span class="acc-emoji">💉</span>
+                <span class="acc-title">疫苗</span>
+                <span class="acc-status" data-status="vaccine">未设置</span>
+                <span class="acc-arrow">›</span>
               </div>
-              <input type="hidden" name="lastVaccineDate" />
-            </label>
-            <label class="field">
-              <span class="field-label">下次疫苗日（可选）</span>
-              <div class="field-picker" id="nextVaccinePicker">
-                <span class="picker-text">点击选择</span>
-                <span class="picker-arrow">›</span>
+              <div class="accordion-body" id="vaccine">
+                <label class="field">
+                  <span class="field-label">上次疫苗日</span>
+                  <div class="field-picker" id="lastVaccinePicker">
+                    <span class="picker-text">点击选择</span>
+                    <span class="picker-arrow">›</span>
+                  </div>
+                  <input type="hidden" name="lastVaccineDate" />
+                </label>
+                <label class="field">
+                  <span class="field-label">下次疫苗日（可选）</span>
+                  <div class="field-picker" id="nextVaccinePicker">
+                    <span class="picker-text">点击选择</span>
+                    <span class="picker-arrow">›</span>
+                  </div>
+                  <input type="hidden" name="nextVaccineDate" />
+                </label>
               </div>
-              <input type="hidden" name="nextVaccineDate" />
-            </label>
-            <label class="field">
-              <span class="field-label">上次体内驱虫</span>
-              <div class="field-picker" id="lastDewormPicker">
-                <span class="picker-text">点击选择</span>
-                <span class="picker-arrow">›</span>
+
+              <div class="accordion-head" data-target="deworm">
+                <span class="acc-emoji">🐛</span>
+                <span class="acc-title">体内驱虫</span>
+                <span class="acc-status" data-status="deworm">未设置</span>
+                <span class="acc-arrow">›</span>
               </div>
-              <input type="hidden" name="lastDewormDate" />
-            </label>
-            <label class="field">
-              <span class="field-label">下次体内驱虫（可选）</span>
-              <div class="field-picker" id="nextDewormPicker">
-                <span class="picker-text">点击选择</span>
-                <span class="picker-arrow">›</span>
+              <div class="accordion-body" id="deworm">
+                <label class="field">
+                  <span class="field-label">上次体内驱虫</span>
+                  <div class="field-picker" id="lastDewormPicker">
+                    <span class="picker-text">点击选择</span>
+                    <span class="picker-arrow">›</span>
+                  </div>
+                  <input type="hidden" name="lastDewormDate" />
+                </label>
+                <label class="field">
+                  <span class="field-label">下次体内驱虫（可选）</span>
+                  <div class="field-picker" id="nextDewormPicker">
+                    <span class="picker-text">点击选择</span>
+                    <span class="picker-arrow">›</span>
+                  </div>
+                  <input type="hidden" name="nextDewormDate" />
+                </label>
               </div>
-              <input type="hidden" name="nextDewormDate" />
-            </label>
-            <label class="field">
-              <span class="field-label">上次体外驱虫</span>
-              <div class="field-picker" id="lastExtDewormPicker">
-                <span class="picker-text">点击选择</span>
-                <span class="picker-arrow">›</span>
+
+              <div class="accordion-head" data-target="extDeworm">
+                <span class="acc-emoji">🪲</span>
+                <span class="acc-title">体外驱虫</span>
+                <span class="acc-status" data-status="extDeworm">未设置</span>
+                <span class="acc-arrow">›</span>
               </div>
-              <input type="hidden" name="lastExternalDewormDate" />
-            </label>
-            <label class="field">
-              <span class="field-label">下次体外驱虫（可选）</span>
-              <div class="field-picker" id="nextExtDewormPicker">
-                <span class="picker-text">点击选择</span>
-                <span class="picker-arrow">›</span>
+              <div class="accordion-body" id="extDeworm">
+                <label class="field">
+                  <span class="field-label">上次体外驱虫</span>
+                  <div class="field-picker" id="lastExtDewormPicker">
+                    <span class="picker-text">点击选择</span>
+                    <span class="picker-arrow">›</span>
+                  </div>
+                  <input type="hidden" name="lastExternalDewormDate" />
+                </label>
+                <label class="field">
+                  <span class="field-label">下次体外驱虫（可选）</span>
+                  <div class="field-picker" id="nextExtDewormPicker">
+                    <span class="picker-text">点击选择</span>
+                    <span class="picker-arrow">›</span>
+                  </div>
+                  <input type="hidden" name="nextExternalDewormDate" />
+                </label>
               </div>
-              <input type="hidden" name="nextExternalDewormDate" />
-            </label>
+            </div>
             <button type="submit" class="primary-btn block">
               <span>保存资料</span>
             </button>
@@ -370,7 +391,7 @@
             <img src="icon.svg" class="about-icon" alt="" />
             <div class="about-info">
               <div class="about-name">小喵成长记</div>
-              <div class="about-ver">v2.2.1 · 自动更新</div>
+              <div class="about-ver">v2.2.3 · 自动更新</div>
             </div>
           </div>
         </div>
