@@ -3,7 +3,7 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.1.0';
+const APP_VERSION = 'v2.2.0';
 
 /* ============ 数据存储 ============ */
 const LS_PROFILE = 'xiaomiao.profile';
@@ -665,6 +665,15 @@ async function renderHome() {
   const photoCount = state.records.reduce((s, r) => s + (r.photos?.length || 0), 0);
   $('#statPhotos').textContent = photoCount;
 
+  // 体重趋势图
+  renderWeightChart();
+
+  // 疫苗 / 驱虫到期提醒
+  renderVaccineReminder();
+
+  // 浮动 + 按钮
+  ensureFab();
+
   // 最近 5 条
   const recent = $('#recentRecords');
   const items = [...state.records].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5);
@@ -691,6 +700,230 @@ async function renderHome() {
       `;
     }).join('');
   }
+}
+
+/* ====================================================================
+ *  体重趋势图（纯 canvas，无依赖）
+ * ==================================================================== */
+function renderWeightChart() {
+  const host = $('#weightChart');
+  if (!host) return;
+  const items = state.records
+    .filter(r => r.type === 'weight' && r.value)
+    .map(r => ({ t: new Date(r.createdAt).getTime(), w: parseFloat(r.value) }))
+    .filter(x => !isNaN(x.w))
+    .sort((a, b) => a.t - b.t);
+
+  if (items.length === 0) {
+    host.innerHTML = `
+      <div class="weight-chart">
+        <div class="weight-chart-head">
+          <div class="weight-chart-title">📊 体重趋势</div>
+        </div>
+        <div style="text-align:center;color:#9a7a5a;font-size:13px;padding:20px 0">
+          还没有体重记录<br>
+          <small style="font-size:11px;opacity:.7">在"记录 → 体重"添加后会显示在这里</small>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const latest = items[items.length - 1];
+  const min = Math.min(...items.map(x => x.w));
+  const max = Math.max(...items.map(x => x.w));
+  const pad = (max - min) * 0.15 || 0.2;
+  const yMin = min - pad;
+  const yMax = max + pad;
+
+  host.innerHTML = `
+    <div class="weight-chart">
+      <div class="weight-chart-head">
+        <div class="weight-chart-title">📊 体重趋势</div>
+        <div class="weight-chart-now">${latest.w.toFixed(2)}<small>kg</small></div>
+      </div>
+      <canvas class="weight-chart-canvas" width="600" height="240"></canvas>
+      <div class="weight-chart-stats">
+        <span>最高 <b>${max.toFixed(2)}</b>kg</span>
+        <span>最低 <b>${min.toFixed(2)}</b>kg</span>
+        <span>共 <b>${items.length}</b> 次</span>
+      </div>
+    </div>`;
+
+  // 画图
+  const canvas = host.querySelector('canvas');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.clientWidth * dpr;
+  const H = canvas.clientHeight * dpr;
+  canvas.width = W; canvas.height = H;
+  ctx.scale(dpr, dpr);
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  const padL = 28, padR = 8, padT = 10, padB = 18;
+  const innerW = w - padL - padR;
+  const innerH = h - padT - padB;
+
+  const xOf = t => padL + (items.length === 1 ? innerW / 2 :
+    ((t - items[0].t) / (items[items.length - 1].t - items[0].t)) * innerW);
+  const yOf = v => padT + (1 - (v - yMin) / (yMax - yMin)) * innerH;
+
+  // 网格
+  ctx.strokeStyle = '#fbe8d4';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = padT + (i / 4) * innerH;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+    ctx.fillStyle = '#9a7a5a';
+    ctx.font = '10px system-ui';
+    ctx.textAlign = 'right';
+    const v = yMax - (i / 4) * (yMax - yMin);
+    ctx.fillText(v.toFixed(2), padL - 4, y + 3);
+  }
+
+  // 填充区域
+  if (items.length > 1) {
+    ctx.fillStyle = 'rgba(255, 154, 60, .15)';
+    ctx.beginPath();
+    ctx.moveTo(xOf(items[0].t), yOf(items[0].w));
+    items.forEach(p => ctx.lineTo(xOf(p.t), yOf(p.w)));
+    ctx.lineTo(xOf(items[items.length - 1].t), padT + innerH);
+    ctx.lineTo(xOf(items[0].t), padT + innerH);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // 折线
+  ctx.strokeStyle = '#ff9a3c';
+  ctx.lineWidth = 2.5;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  items.forEach((p, i) => {
+    const x = xOf(p.t), y = yOf(p.w);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // 圆点 + 最新点高亮
+  items.forEach((p, i) => {
+    const x = xOf(p.t), y = yOf(p.w);
+    const isLast = i === items.length - 1;
+    ctx.fillStyle = isLast ? '#ff7a18' : '#fff';
+    ctx.beginPath(); ctx.arc(x, y, isLast ? 5 : 3, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#ff9a3c';
+    ctx.lineWidth = isLast ? 3 : 2;
+    ctx.stroke();
+  });
+}
+
+/* ====================================================================
+ *  疫苗 / 驱虫到期提醒
+ *  优先级：3 天内 → 红色 urgent；14 天内 → 橙色；超过忽略
+ * ==================================================================== */
+function renderVaccineReminder() {
+  const host = $('#vaccineReminder');
+  if (!host) return;
+  const p = state.profile;
+  if (!p) { host.innerHTML = ''; return; }
+
+  const reminders = [];
+  const now = new Date();
+  const dayDiff = (d) => Math.ceil((new Date(d) - now) / 86400000);
+
+  if (p.lastVaccineDate) {
+    const d = dayDiff(p.nextVaccineDate ||
+      new Date(new Date(p.lastVaccineDate).getTime() + 365 * 86400000));
+    reminders.push({ icon: '💉', name: '疫苗', days: d, date: p.nextVaccineDate });
+  }
+  if (p.lastDewormDate) {
+    const d = dayDiff(p.nextDewormDate ||
+      new Date(new Date(p.lastDewormDate).getTime() + 90 * 86400000));
+    reminders.push({ icon: '🐛', name: '体内驱虫', days: d, date: p.nextDewormDate });
+  }
+  if (p.lastExternalDewormDate) {
+    const d = dayDiff(p.nextExternalDewormDate ||
+      new Date(new Date(p.lastExternalDewormDate).getTime() + 30 * 86400000));
+    reminders.push({ icon: '🪲', name: '体外驱虫', days: d, date: p.nextExternalDewormDate });
+  }
+
+  const upcoming = reminders
+    .filter(r => r.days <= 14)
+    .sort((a, b) => a.days - b.days);
+
+  if (upcoming.length === 0) {
+    host.innerHTML = '';
+    return;
+  }
+
+  host.innerHTML = upcoming.map(r => {
+    const urgent = r.days <= 3;
+    const txt = r.days < 0
+      ? `<b>${r.icon} ${r.name}已逾期 ${-r.days} 天</b>`
+      : r.days === 0
+        ? `<b>${r.icon} ${r.name}今天到期</b>`
+        : `<b>${r.icon} ${r.name}还有 ${r.days} 天</b>`;
+    return `
+      <div class="vaccine-banner${urgent ? ' urgent' : ''}" data-jump="vaccine">
+        <div class="vaccine-banner-text">
+          ${txt}
+          <small>${r.date ? '到期日：' + r.date : '记得按时打疫苗/驱虫哦'}</small>
+        </div>
+        <button class="vaccine-banner-close" data-dismiss="vaccine">×</button>
+      </div>`;
+  }).join('');
+
+  host.querySelectorAll('.vaccine-banner').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.matches('[data-dismiss]')) return;
+      switchTab('settings');
+      setTimeout(() => openProfileSheet(), 300);
+    });
+    el.querySelector('[data-dismiss]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      el.style.display = 'none';
+    });
+  });
+}
+
+/* ====================================================================
+ *  浮动 + 按钮（4 种快捷记录）
+ * ==================================================================== */
+function ensureFab() {
+  if (document.querySelector('.fab')) return;
+  const fab = document.createElement('button');
+  fab.className = 'fab';
+  fab.setAttribute('aria-label', '快速记录');
+  fab.textContent = '＋';
+  const menu = document.createElement('div');
+  menu.className = 'fab-menu';
+  const items = [
+    { label: '喂食', emoji: '🍽', type: 'feed' },
+    { label: '排便', emoji: '💩', type: 'poop' },
+    { label: '体重', emoji: '⚖️', type: 'weight' },
+    { label: '健康', emoji: '💊', type: 'health' },
+  ];
+  menu.innerHTML = items.map(i =>
+    `<div class="fab-menu-item" data-type="${i.type}">
+       <span class="label">${i.label}</span>
+       <div class="circle">${i.emoji}</div>
+     </div>`
+  ).join('');
+  document.body.appendChild(fab);
+  document.body.appendChild(menu);
+
+  let open = false;
+  const toggle = () => {
+    open = !open;
+    menu.classList.toggle('open', open);
+    fab.textContent = open ? '×' : '＋';
+  };
+  fab.addEventListener('click', toggle);
+  menu.querySelectorAll('.fab-menu-item').forEach(el => {
+    el.addEventListener('click', () => {
+      open = false;
+      menu.classList.remove('open');
+      fab.textContent = '＋';
+      openRecordSheet(el.dataset.type);
+    });
+  });
 }
 
 function renderTimeline() {
@@ -1653,34 +1886,64 @@ async function deleteRecord(id) {
 
 /* ====================================================================
  *  导入 / 导出 / 清空
+ *  照片以 base64 内嵌，JSON 文件可直接备份到网盘 / 微信
  * ==================================================================== */
+async function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+async function base64ToBlob(dataUrl) {
+  const r = await fetch(dataUrl);
+  return await r.blob();
+}
+
 async function exportData() {
+  showToast('准备导出…');
   const photos = await dbGetAllPhotos();
+  const photoOut = [];
+  for (const p of photos) {
+    if (!p || !p.id || !p.blob) continue;
+    try {
+      const dataUrl = await blobToBase64(p.blob);
+      photoOut.push({ id: p.id, type: p.blob.type || 'image/jpeg', dataUrl });
+    } catch {}
+  }
   const data = {
-    version: 1,
+    version: 2,
     exportedAt: nowStr(),
+    app: 'xiaomiao',
     profile: state.profile,
     records: state.records,
-    photos,
+    photos: photoOut,
   };
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `xiaomiao-backup-${todayStr()}.json`;
   a.click();
-  showToast('已导出 📤');
+  showToast(`已导出 ${state.records.length} 条记录、${photoOut.length} 张照片 📤`);
 }
 async function importData(file) {
   try {
     const text = await file.text();
     const data = JSON.parse(text);
     if (!data || !Array.isArray(data.records)) throw new Error('文件格式不对');
-    if (!confirm(`检测到 ${data.records.length} 条记录，确认导入？\n当前数据会被覆盖。`)) return;
+    const photoCount = Array.isArray(data.photos) ? data.photos.length : 0;
+    if (!confirm(`检测到 ${data.records.length} 条记录、${photoCount} 张照片，确认导入？\n当前数据会被覆盖。`)) return;
     if (data.profile) saveProfile(data.profile);
     saveRecords(data.records);
     if (Array.isArray(data.photos)) {
       for (const p of data.photos) {
-        if (p && p.id && p.blob) await dbPutPhoto(p.id, p.blob);
+        if (p && p.id && p.dataUrl) {
+          try {
+            const blob = await base64ToBlob(p.dataUrl);
+            await dbPutPhoto(p.id, blob);
+          } catch {}
+        }
       }
     }
     renderAll();
@@ -1803,6 +2066,29 @@ function bindEvents() {
     });
   });
 
+  // 健康提醒 - 6 个 picker
+  const healthPickers = [
+    ['lastVaccinePicker', 'lastVaccineDate'],
+    ['nextVaccinePicker', 'nextVaccineDate'],
+    ['lastDewormPicker', 'lastDewormDate'],
+    ['nextDewormPicker', 'nextDewormDate'],
+    ['lastExtDewormPicker', 'lastExternalDewormDate'],
+    ['nextExtDewormPicker', 'nextExternalDewormDate'],
+  ];
+  healthPickers.forEach(([pickerId, field]) => {
+    const el = document.getElementById(pickerId);
+    if (!el) return;
+    el.addEventListener('click', () => {
+      DatePicker.open(state.profile?.[field], val => {
+        const form = $('#profileForm');
+        form.querySelector(`input[name="${field}"]`).value = val;
+        el.classList.add('has-value');
+        el.querySelector('.picker-text').textContent = val;
+        el.querySelector('.picker-text').classList.remove('placeholder');
+      });
+    });
+  });
+
   // 设置 - 表单提交
   $('#profileForm').addEventListener('submit', e => {
     e.preventDefault();
@@ -1878,7 +2164,7 @@ async function boot() {
 
     // 强制覆盖版本号（防止 SW 缓存的旧 HTML 显示老版本）
     const verEl = document.querySelector('.about-ver');
-    if (verEl) verEl.textContent = `${APP_VERSION} · 本地工具`;
+    if (verEl) verEl.textContent = `${APP_VERSION} · 自动更新`;
 
     renderAll();
   } catch (err) {
@@ -1893,5 +2179,55 @@ async function boot() {
     if (['home','timeline','lookbook','settings','assistant'].includes(hash)) switchTab(hash);
     else maybeOnboard();
   }, 600);
+
+  // 启动后异步检查更新（不阻塞 UI）
+  checkRemoteUpdate();
+}
+
+/* ====================================================================
+ *  远程版本检测（核心：让 APK 用户能收到推送的更新）
+ *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
+ * ==================================================================== */
+const LOCAL_BUILD = 3;  // 与 www/version.json 同步
+let remoteUpdateInfo = null;
+
+async function checkRemoteUpdate() {
+  try {
+    const r = await fetch('version.json?_=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return;
+    const info = await r.json();
+    remoteUpdateInfo = info;
+    const remoteBuild = info.build || 0;
+    if (remoteBuild <= LOCAL_BUILD) return;
+
+    // 弹一个明显的提示条
+    const banner = document.createElement('div');
+    banner.className = 'update-banner';
+    banner.innerHTML = `
+      <div class="update-banner-text">
+        <strong>✨ ${info.version || '新版本'} 已就绪</strong>
+        <span>${info.changelog || ''}</span>
+      </div>
+      <button class="update-banner-btn">立即更新</button>
+      <button class="update-banner-close" aria-label="关闭">×</button>
+    `;
+    document.body.appendChild(banner);
+    setTimeout(() => banner.classList.add('show'), 50);
+
+    banner.querySelector('.update-banner-btn').addEventListener('click', () => {
+      // 强制 SW 跳过等待 + 通知用户
+      if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage('SKIP_WAITING');
+      }
+      // 强制刷新（绕过缓存）
+      location.reload();
+    });
+    banner.querySelector('.update-banner-close').addEventListener('click', () => {
+      banner.classList.remove('show');
+      setTimeout(() => banner.remove(), 300);
+    });
+  } catch (e) {
+    // 离线 / 没部署 / 跨域 → 静默忽略
+  }
 }
 boot();

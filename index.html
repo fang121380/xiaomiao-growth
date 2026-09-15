@@ -45,7 +45,7 @@
     window.__APP_VERSION__ = '2.1.0';
     document.addEventListener('DOMContentLoaded', function () {
       var el = document.querySelector('.about-ver');
-      if (el) el.textContent = 'v2.1.0 · 本地工具';
+      if (el) el.textContent = 'v2.2.0 · 自动更新';
     });
   </script>
 </head>
@@ -180,6 +180,8 @@
             <div class="section-title">📝 最近记录</div>
             <button class="link-btn" id="gotoTimeline">全部 ›</button>
           </div>
+          <div id="vaccineReminder"></div>
+          <div id="weightChart"></div>
           <div id="recentRecords" class="recent-list"></div>
         </div>
 
@@ -281,6 +283,55 @@
               </div>
               <input type="hidden" name="adoptDate" />
             </label>
+            <div class="form-section-title">健康提醒（可选）</div>
+            <label class="field">
+              <span class="field-label">上次疫苗日</span>
+              <div class="field-picker" id="lastVaccinePicker">
+                <span class="picker-text">点击选择</span>
+                <span class="picker-arrow">›</span>
+              </div>
+              <input type="hidden" name="lastVaccineDate" />
+            </label>
+            <label class="field">
+              <span class="field-label">下次疫苗日（可选）</span>
+              <div class="field-picker" id="nextVaccinePicker">
+                <span class="picker-text">点击选择</span>
+                <span class="picker-arrow">›</span>
+              </div>
+              <input type="hidden" name="nextVaccineDate" />
+            </label>
+            <label class="field">
+              <span class="field-label">上次体内驱虫</span>
+              <div class="field-picker" id="lastDewormPicker">
+                <span class="picker-text">点击选择</span>
+                <span class="picker-arrow">›</span>
+              </div>
+              <input type="hidden" name="lastDewormDate" />
+            </label>
+            <label class="field">
+              <span class="field-label">下次体内驱虫（可选）</span>
+              <div class="field-picker" id="nextDewormPicker">
+                <span class="picker-text">点击选择</span>
+                <span class="picker-arrow">›</span>
+              </div>
+              <input type="hidden" name="nextDewormDate" />
+            </label>
+            <label class="field">
+              <span class="field-label">上次体外驱虫</span>
+              <div class="field-picker" id="lastExtDewormPicker">
+                <span class="picker-text">点击选择</span>
+                <span class="picker-arrow">›</span>
+              </div>
+              <input type="hidden" name="lastExternalDewormDate" />
+            </label>
+            <label class="field">
+              <span class="field-label">下次体外驱虫（可选）</span>
+              <div class="field-picker" id="nextExtDewormPicker">
+                <span class="picker-text">点击选择</span>
+                <span class="picker-arrow">›</span>
+              </div>
+              <input type="hidden" name="nextExternalDewormDate" />
+            </label>
             <button type="submit" class="primary-btn block">
               <span>保存资料</span>
             </button>
@@ -319,7 +370,7 @@
             <img src="icon.svg" class="about-icon" alt="" />
             <div class="about-info">
               <div class="about-name">小喵成长记</div>
-              <div class="about-ver">v2.1.0 · 本地工具</div>
+              <div class="about-ver">v2.2.0 · 自动更新</div>
             </div>
           </div>
         </div>
@@ -456,5 +507,25 @@
   <script src="breeds.js"></script>
   <script src="knowledge.js"></script>
   <script src="app.js"></script>
+  <script>
+    /* 注册 Service Worker（仅 HTTPS / capacitor scheme 下生效） */
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').then(function (reg) {
+          /* 监听更新：发现新 SW 时，提示用户刷新 */
+          reg.addEventListener('updatefound', function () {
+            var w = reg.installing;
+            if (!w) return;
+            w.addEventListener('statechange', function () {
+              if (w.state === 'installed' && navigator.serviceWorker.controller) {
+                window.__HAS_NEW_SW__ = true;
+                window.dispatchEvent(new Event('xiaomiao-sw-updated'));
+              }
+            });
+          });
+        }).catch(function () {});
+      });
+    }
+  </script>
 </body>
 </html>

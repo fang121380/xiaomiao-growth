@@ -4,9 +4,16 @@
   "webDir": "www",
   "android": {
     "allowMixedContent": false,
-    "backgroundColor": "#fff1de"
+    "backgroundColor": "#fff1de",
+    "allowNavigation": [
+      "https://xiaomiao.pages.dev",
+      "https://fang121380.github.io"
+    ]
   },
   "server": {
-    "androidScheme": "https"
+    "androidScheme": "https",
+    "cleartext": false,
+    "url": "https://xiaomiao.pages.dev",
+    "iosScheme": "https"
   }
 }

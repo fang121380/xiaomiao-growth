@@ -1894,3 +1894,186 @@ body {
 }
 .chat-mode .topbar { display: none; }
 .chat-mode .tabbar { display: none; }
+/* ====================================================================
+ *  远程更新横幅（顶部滑入）
+ * ==================================================================== */
+.update-banner {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 9999;
+  background: linear-gradient(135deg, var(--primary, #ff9a3c), #ff7a18);
+  color: #fff;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 4px 20px rgba(255, 122, 24, .35);
+  transform: translateY(-100%);
+  transition: transform .35s cubic-bezier(.4, 1.4, .6, 1);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.update-banner.show { transform: translateY(0); }
+.update-banner-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.update-banner-text strong { font-size: 15px; font-weight: 600; }
+.update-banner-text span { font-size: 12px; opacity: .92; }
+.update-banner-btn {
+  background: #fff;
+  color: #ff7a18;
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform .15s;
+}
+.update-banner-btn:active { transform: scale(.95); }
+.update-banner-close {
+  background: transparent;
+  border: 0;
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  flex-shrink: 0;
+  opacity: .85;
+}
+
+/* ====================================================================
+ *  首页体重趋势图
+ * ==================================================================== */
+.weight-chart {
+  background: #fff;
+  border-radius: 18px;
+  padding: 16px 16px 12px;
+  margin: 0 0 16px;
+  box-shadow: 0 2px 12px rgba(255, 154, 60, .08);
+}
+.weight-chart-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.weight-chart-title { font-size: 15px; font-weight: 600; color: #5a3a1f; }
+.weight-chart-now { font-size: 22px; font-weight: 700; color: var(--primary, #ff9a3c); }
+.weight-chart-now small { font-size: 13px; color: #9a7a5a; margin-left: 2px; }
+.weight-chart-canvas { width: 100%; height: 120px; display: block; }
+.weight-chart-stats {
+  display: flex;
+  gap: 16px;
+  font-size: 11px;
+  color: #9a7a5a;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid #fbe8d4;
+}
+.weight-chart-stats b { color: #5a3a1f; font-weight: 600; }
+
+/* ====================================================================
+ *  首页长按浮动 + 按钮
+ * ==================================================================== */
+.fab {
+  position: fixed;
+  right: 18px;
+  bottom: calc(78px + env(safe-area-inset-bottom, 0));
+  z-index: 500;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ff9a3c, #ff7a18);
+  color: #fff;
+  border: 0;
+  font-size: 28px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 20px rgba(255, 122, 24, .4);
+  cursor: pointer;
+  transition: transform .25s;
+}
+.fab:active { transform: scale(.92); }
+.fab-menu {
+  position: fixed;
+  right: 18px;
+  bottom: calc(78px + 56px + 12px + env(safe-area-inset-bottom, 0));
+  z-index: 499;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-end;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(20px) scale(.9);
+  transition: opacity .2s, transform .2s;
+}
+.fab-menu.open { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+.fab-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+.fab-menu-item span.label {
+  background: rgba(0, 0, 0, .75);
+  color: #fff;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
+}
+.fab-menu-item .circle {
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  background: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .15);
+}
+
+/* ====================================================================
+ *  提醒横幅（疫苗 / 驱虫到期）
+ * ==================================================================== */
+.vaccine-banner {
+  background: linear-gradient(135deg, #fff4e0, #ffe0b3);
+  border-left: 4px solid #ff7a18;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 0 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: #5a3a1f;
+}
+.vaccine-banner.urgent {
+  background: linear-gradient(135deg, #ffe4e4, #ffcccc);
+  border-left-color: #e53935;
+}
+.vaccine-banner-icon { font-size: 22px; }
+.vaccine-banner-text { flex: 1; }
+.vaccine-banner-text b { display: block; font-size: 14px; }
+.vaccine-banner-text small { color: #9a7a5a; }
+.vaccine-banner-close {
+  background: transparent; border: 0;
+  color: #9a7a5a; font-size: 18px; cursor: pointer;
+}
+
+.form-section-title {
+  font-size: 12px;
+  color: #9a7a5a;
+  font-weight: 600;
+  margin: 18px 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed #f0d8b8;
+}
