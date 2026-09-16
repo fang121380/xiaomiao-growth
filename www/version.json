@@ -1,8 +1,1 @@
-{
-  "build": 11,
-  "version": "v2.2.10",
-  "released": "2026-09-16",
-  "changelog": "v2.2.10 关键修复：删掉 capacitor.config.json 的 server.url，让 WebView 走本地 assets。",
-  "force": false,
-  "min_supported_build": 4
-}
+{ "build": 12, "version": "v2.2.11", "released": "2026-09-16", "changelog": "图标质量改进：从 icon-512.png 重生成所有 launcher mipmap", "force": false, "min_supported_build": 4 }

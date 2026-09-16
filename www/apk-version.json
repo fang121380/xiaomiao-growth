@@ -1,7 +1,7 @@
 {
-  "versionCode": 14,
-  "versionName": "2.2.10",
-  "downloadUrl": "https://xiaomiao-toh.pages.dev/apks/xiaomiao-v2.2.10.apk",
-  "changelog": "v2.2.10 关键修复：删掉 capacitor.config.json 的 server.url（让 WebView 走本地 assets，不再依赖远程 CF Pages），同步 repo 根 index.html 到最新版。从此不会再出现"关于页同时显示两行版本号"或 WebView 加载旧 HTML 的诡异问题。",
+  "versionCode": 15,
+  "versionName": "2.2.11",
+  "downloadUrl": "https://xiaomiao-toh.pages.dev/apks/xiaomiao-v2.2.11.apk",
+  "changelog": "v2.2.11: 用 www/icon-512.png 直接重新生成所有 mipmap（之前用 180px 中转有损），现在所有 launcher 密度都从 512px 原图 resize，图标质量更好。",
   "force": false
 }
