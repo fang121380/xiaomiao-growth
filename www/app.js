@@ -3,8 +3,8 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.2.8';
-const APK_VERSION_CODE = 12;  // 与 android/app/build.gradle 的 versionCode 同步
+const APP_VERSION = 'v2.2.9';
+const APK_VERSION_CODE = 13;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
 const LS_LAST_SEEN_VERSION  = 'xiaomiao.lastSeenVersion';     // e.g. 'v2.2.7'
@@ -2423,7 +2423,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 9;  // 与 www/version.json 同步
+const LOCAL_BUILD = 10;  // 与 www/version.json 同步
 let remoteUpdateInfo = null;
 
 async function checkRemoteUpdate() {

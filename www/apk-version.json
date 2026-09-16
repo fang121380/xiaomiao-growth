@@ -1,7 +1,7 @@
 {
-  "versionCode": 12,
-  "versionName": "2.2.8",
-  "downloadUrl": "https://xiaomiao-toh.pages.dev/apks/xiaomiao-v2.2.8.apk",
-  "changelog": "v2.2.8 新增升级反馈：boot() 自动检测 versionCode 变化并弹 '🎉 已升级到 v2.2.8' toast；关于页加绿色「已是最新」标识。从此装上新版本能立刻看到反馈，不会再以为没升级成功。",
+  "versionCode": 13,
+  "versionName": "2.2.9",
+  "downloadUrl": "https://xiaomiao-toh.pages.dev/apks/xiaomiao-v2.2.9.apk",
+  "changelog": "v2.2.9 修复 launcher 图标：之前 v2.2.5 替换图标时只更新了 www/icon-*.png，没更新 mipmap-*/ic_launcher.png（Android 系统 launcher 用的资源），所以 launcher 一直显示默认 Capacitor 模板。现在 mipmap 全 5 个密度 + adaptive icon foreground + background 色都同步为新猫图标。",
   "force": false
 }
