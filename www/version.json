@@ -1,1 +1,1 @@
-{ "build": 12, "version": "v2.2.11", "released": "2026-09-16", "changelog": "图标质量改进：从 icon-512.png 重生成所有 launcher mipmap", "force": false, "min_supported_build": 4 }
+{ "build": 13, "version": "v2.2.12", "released": "2026-09-16", "changelog": "图标统一为 icon-512.png，删除独立 SVG", "force": false, "min_supported_build": 4 }

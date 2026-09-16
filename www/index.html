@@ -7,8 +7,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <link rel="manifest" href="manifest.json" />
-  <link rel="icon" type="image/png" href="icon-180.png" />
-  <link rel="apple-touch-icon" href="icon-180.png" />
+  <link rel="icon" type="image/png" href="icon-512.png" />
+  <link rel="apple-touch-icon" href="icon-512.png" />
   <title>小喵成长记</title>
   <link rel="stylesheet" href="styles.css" />
   <script>
@@ -42,10 +42,10 @@
 
     /* 版本注入：无论 SW 缓存了什么 HTML，都强制覆盖"关于"卡片里的版本号
      * 这样不会被 webview / SW 缓存住的旧 about-ver 文本欺骗 */
-    window.__APP_VERSION__ = 'v2.2.11';
+    window.__APP_VERSION__ = 'v2.2.12';
     document.addEventListener('DOMContentLoaded', function () {
       var el = document.getElementById('aboutVer');
-      if (el) el.textContent = 'v2.2.11 · 自动更新';
+      if (el) el.textContent = 'v2.2.12 · 自动更新';
     });
   </script>
 </head>
@@ -55,7 +55,7 @@
   <div id="splash" class="splash">
     <div class="splash-inner">
       <div class="splash-icon">
-        <img src="icon.svg" alt="logo" />
+        <img src="icon-512.png" alt="logo" />
       </div>
       <div class="splash-title">小喵成长记</div>
       <div class="splash-sub">每一刻成长，都值得记录 🐾</div>
@@ -388,10 +388,10 @@
         <div class="setting-group">
           <div class="group-label">关于</div>
           <div class="setting-card about">
-            <img src="icon.svg" class="about-icon" alt="" />
+            <img src="icon-512.png" class="about-icon" alt="" />
             <div class="about-info">
               <div class="about-name">小喵成长记</div>
-              <div class="about-ver" id="aboutVer">v2.2.11 · 自动更新</div>
+              <div class="about-ver" id="aboutVer">v2.2.12 · 自动更新</div>
               <div class="about-ver-status hidden" id="aboutVerStatus">已是最新</div>
             </div>
           </div>

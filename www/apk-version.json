@@ -1,7 +1,7 @@
 {
-  "versionCode": 15,
-  "versionName": "2.2.11",
-  "downloadUrl": "https://xiaomiao-toh.pages.dev/apks/xiaomiao-v2.2.11.apk",
-  "changelog": "v2.2.11: 用 www/icon-512.png 直接重新生成所有 mipmap（之前用 180px 中转有损），现在所有 launcher 密度都从 512px 原图 resize，图标质量更好。",
+  "versionCode": 16,
+  "versionName": "2.2.12",
+  "downloadUrl": "https://xiaomiao-toh.pages.dev/apks/xiaomiao-v2.2.12.apk",
+  "changelog": "v2.2.12: 删掉旧的 icon.svg（是只绿眼睛的猫，跟 icon-512.png 不是同一只！），web 端所有图标引用换成 icon-512.png（用户指定的蓝眼睛金渐层小猫）。现在 splash / onboarding / favicon / apple-touch-icon / 关于页 logo 全部统一为同一只猫。",
   "force": false
 }

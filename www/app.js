@@ -3,8 +3,8 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.2.11';
-const APK_VERSION_CODE = 15;  // 与 android/app/build.gradle 的 versionCode 同步
+const APP_VERSION = 'v2.2.12';
+const APK_VERSION_CODE = 16;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
 const LS_LAST_SEEN_VERSION  = 'xiaomiao.lastSeenVersion';     // e.g. 'v2.2.7'
@@ -1845,7 +1845,7 @@ function maybeOnboard() {
   if (state.profile) return;
   openSheet(`
     <div class="onboard">
-      <div class="onboard-icon"><img src="icon.svg" alt="" /></div>
+      <div class="onboard-icon"><img src="icon-512.png" alt="" /></div>
       <h3>🐱 欢迎使用小喵成长记</h3>
       <p class="sheet-tip">先告诉我们关于小猫的基本信息</p>
       <form id="onboardForm" class="form">
@@ -2423,7 +2423,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 12;  // 与 www/version.json 同步
+const LOCAL_BUILD = 13;  // 与 www/version.json 同步
 let remoteUpdateInfo = null;
 
 async function checkRemoteUpdate() {
