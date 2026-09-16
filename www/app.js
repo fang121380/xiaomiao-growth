@@ -2405,7 +2405,7 @@ async function checkApkUpdate() {
  * 用于「立即检查更新」按钮的主动诊断
  */
 async function checkApkUpdateVerbose(verbose) {
-  const url = 'https://xiaomiao-toh.pages.dev/apk-version.json?_=' + Date.now();
+  const url = 'https://xiaomiao-toh.pages.dev/www/apk-version.json?_=' + Date.now();
   try {
     const r = await fetch(url, { cache: 'no-store', mode: 'cors' });
     if (!r.ok) {
