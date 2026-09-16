@@ -1,70 +1,42 @@
-/* Service Worker：网络优先 + 本地缓存兜底
- * 策略：
- *   - GET 请求：network-first（永远拿最新），失败时降级到缓存
- *   - HTML/JS/CSS：缓存到 xiaomiao-v1 命名空间
- *   - 照片/IndexedDB 请求：直接走网络，不缓存
- *   - 后台发现新版本时，自动 skipWaiting 并通知所有 client 刷新
+/* Service Worker: 自杀版
+ * v2.2.5+: 之前 v2.2.3 的 SW 把 index.html 缓存到 xiaomiao-v1，
+ * 覆盖安装新 APK 后 WebView 仍走 cache，导致永远显示旧版。
+ *
+ * 现在 sw.js 启动后只做两件事：
+ *   1. 清掉所有 cache
+ *   2. unregister 自己
+ *
+ * 之后 WebView 直接走 assets 文件，永远不会被 SW 拦截。
+ *
+ * 文件必须保持字节级变化（哪怕一个空格），让浏览器检测到"新 SW"并触发 install。
  */
-const CACHE_NAME = 'xiaomiao-v1';
-const ESSENTIAL = [
-  '/', '/index.html', '/styles.css', '/app.js', '/breeds.js',
-  '/knowledge.js', '/config.js', '/manifest.json', '/version.json',
-];
 
-self.addEventListener('install', (e) => {
-  e.waitUntil(
-    caches.open(CACHE_NAME).then(c => c.addAll(ESSENTIAL).catch(() => {}))
-  );
+/* SW v3 - 自杀版 */
+
+self.addEventListener('install', () => {
+  // 立即跳过 waiting，让 activate 尽快跑
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (e) => {
-  e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    ).then(() => self.clients.claim())
-  );
+  e.waitUntil((async () => {
+    // 1. 清掉所有 cache（v1 v2 全部）
+    try {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    } catch {}
+    // 2. unregister 自己，从此 WebView 不再受 SW 控制
+    try {
+      await self.registration.unregister();
+    } catch {}
+    // 3. 接管后让所有 client 重新加载一次（确保拿新 assets）
+    try {
+      const clients = await self.clients.matchAll({ type: 'window' });
+      for (const c of clients) {
+        try { c.navigate(c.url); } catch {}
+      }
+    } catch {}
+  })());
 });
 
-self.addEventListener('fetch', (e) => {
-  const req = e.request;
-  if (req.method !== 'GET' && req.method !== 'POST') return;
-  const url = new URL(req.url);
-  // 只处理同源 + capacitor scheme
-  if (url.origin !== self.location.origin &&
-      !url.protocol.startsWith('capacitor')) return;
-
-  // /api/* 路径代理到 CF Pages Functions（同源限制下绕开 WebView 跨域拦截）
-  if (url.pathname.startsWith('/api/')) {
-    const target = 'https://xiaomiao-toh.pages.dev' + url.pathname + url.search;
-    e.respondWith(fetch(target, {
-      method: req.method,
-      headers: req.headers,
-      body: req.body,
-      mode: 'cors',
-      credentials: 'omit',
-    }));
-    return;
-  }
-
-  e.respondWith(
-    fetch(req)
-      .then(resp => {
-        // 成功：写一份到缓存（异步，不阻塞响应）
-        if (resp.ok && (req.destination === 'document' ||
-                         req.destination === 'script' ||
-                         req.destination === 'style' ||
-                         url.pathname.endsWith('.json'))) {
-          const clone = resp.clone();
-          caches.open(CACHE_NAME).then(c => c.put(req, clone)).catch(() => {});
-        }
-        return resp;
-      })
-      .catch(() => caches.match(req).then(c => c || caches.match('/index.html')))
-  );
-});
-
-// 后台收到 SKIP_WAITING 消息后激活并通知所有 client 刷新
-self.addEventListener('message', (e) => {
-  if (e.data === 'SKIP_WAITING') self.skipWaiting();
-});
+// 不注册 fetch handler——unregister 之后 SW 已不再控制任何请求
