@@ -2053,6 +2053,15 @@ function bindEvents() {
     card.addEventListener('click', () => switchTab(card.dataset.jump));
   });
 
+  // 设置页 - 立即检查更新
+  const checkUpdateRow = $('#check-update-row');
+  if (checkUpdateRow) {
+    checkUpdateRow.addEventListener('click', () => {
+      showToast('正在检查更新…', 1500);
+      checkApkUpdateVerbose(true);
+    });
+  }
+
   // 时间线页
   $('#fabAdd').addEventListener('click', () => openRecordSheet());
   $('#filterTabs').addEventListener('click', e => {
@@ -2388,18 +2397,35 @@ async function checkRemoteUpdate() {
  *  配置：在 www/apk-version.json 里改 versionCode
  * ==================================================================== */
 async function checkApkUpdate() {
-  try {
-    const r = await fetch('https://xiaomiao-toh.pages.dev/www/apk-version.json?_=' + Date.now(), {
-      cache: 'no-store',
-      mode: 'cors',
-    });
-    if (!r.ok) return;
-    const info = await r.json();
-    if (!info.versionCode || info.versionCode <= APK_VERSION_CODE) return;
+  return checkApkUpdateVerbose(false);
+}
 
+/**
+ * 详细版的检查更新：把每一步结果通过 toast 告知用户
+ * 用于「立即检查更新」按钮的主动诊断
+ */
+async function checkApkUpdateVerbose(verbose) {
+  const url = 'https://xiaomiao-toh.pages.dev/www/apk-version.json?_=' + Date.now();
+  try {
+    const r = await fetch(url, { cache: 'no-store', mode: 'cors' });
+    if (!r.ok) {
+      if (verbose) showToast(`❌ fetch 失败: HTTP ${r.status}`, 3000);
+      return null;
+    }
+    const info = await r.json();
+    if (verbose) {
+      showToast(`📡 server: ${info.versionName} (v${info.versionCode}) · local: v${APK_VERSION_CODE}`, 3000);
+    }
+    if (!info.versionCode || info.versionCode <= APK_VERSION_CODE) {
+      if (verbose) showToast('✅ 已经是最新版本', 2000);
+      return info;
+    }
     showApkUpdateBanner(info);
+    if (verbose) showToast(`🆕 发现新版本 ${info.versionName}`, 2000);
+    return info;
   } catch (e) {
-    // 离线 / 跨域 → 静默忽略
+    if (verbose) showToast(`❌ fetch 异常: ${e.message || e}`, 3000);
+    return null;
   }
 }
 
