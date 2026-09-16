@@ -6,6 +6,23 @@
 const APP_VERSION = 'v2.2.7';
 const APK_VERSION_CODE = 11;  // 与 android/app/build.gradle 的 versionCode 同步
 
+/* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
+const LS_LAST_SEEN_VERSION  = 'xiaomiao.lastSeenVersion';     // e.g. 'v2.2.7'
+const LS_LAST_SEEN_VCODE    = 'xiaomiao.lastSeenVersionCode'; // e.g. 11
+const LS_LAST_UPDATE_CHECK  = 'xiaomiao.lastUpdateCheck';     // ISO timestamp
+
+function getLastSeenVersion()  { return localStorage.getItem(LS_LAST_SEEN_VERSION); }
+function getLastSeenVCode()    {
+  const v = parseInt(localStorage.getItem(LS_LAST_SEEN_VCODE), 10);
+  return Number.isFinite(v) ? v : null;
+}
+function setLastSeen(version, code) {
+  try {
+    localStorage.setItem(LS_LAST_SEEN_VERSION, version || APP_VERSION);
+    if (Number.isFinite(code)) localStorage.setItem(LS_LAST_SEEN_VCODE, String(code));
+  } catch {}
+}
+
 /* ============ 体重单位（输入 g，存储 g，展示 kg） ============ */
 const fmtKg = g => g ? (Number(g) / 1000).toFixed(2) + ' kg' : '—';
 const fmtKgNum = g => g ? (Number(g) / 1000).toFixed(2) : '—';
@@ -2302,6 +2319,68 @@ window.__xiaomiaoBack = function () {
 /* ====================================================================
  *  启动
  * ==================================================================== */
+
+/**
+ * 检测 versionCode 变化：
+ *  - 首次启动（没有 last-seen）→ 静默写入，不弹 toast
+ *  - 升级（last-seen code < 当前 code）→ 弹 "🎉 已升级到 vX.Y.Z"
+ *  - 关于页底部追加 "vX.Y.Z · 自动更新 · 已是最新" 标识
+ */
+function checkVersionUpgrade() {
+  try {
+    const lastVer  = getLastSeenVersion();
+    const lastCode = getLastSeenVCode();
+    const curCode  = APK_VERSION_CODE;
+
+    const isFirstLaunch = lastVer === null || lastCode === null;
+    const isUpgraded =
+      !isFirstLaunch &&
+      Number.isFinite(curCode) &&
+      Number.isFinite(lastCode) &&
+      curCode > lastCode;
+
+    if (isUpgraded) {
+      // 延迟一下，等 splash 淡出再弹，体验更顺
+      setTimeout(() => showToast(`🎉 已升级到 ${APP_VERSION}`, 2400), 800);
+    }
+
+    // 无论是否升级，都刷新关于页状态 + 写入最新
+    refreshAboutVerStatus();
+    setLastSeen(APP_VERSION, curCode);
+  } catch (e) {
+    // 静默失败，不影响启动
+    console.warn('checkVersionUpgrade:', e);
+  }
+}
+
+/**
+ * 关于页底部加 "vX.Y.Z · 自动更新 · 已是最新" 标识
+ * - 不 hardcode 版本号，从 APP_VERSION 读取
+ * - 用现成的 .about-ver 元素兜底（SW 缓存的旧 HTML 没有 status 元素）
+ */
+function refreshAboutVerStatus() {
+  // 主显示：v2.2.7 · 自动更新
+  const verEl = document.querySelector('.about-ver');
+  if (verEl) verEl.textContent = `${APP_VERSION} · 自动更新`;
+
+  // 状态徽章：已是最新
+  let statusEl = document.getElementById('aboutVerStatus');
+  if (!statusEl) {
+    // 兜底：动态注入到 about-info 末尾
+    const info = document.querySelector('.about-info');
+    if (info) {
+      statusEl = document.createElement('div');
+      statusEl.id = 'aboutVerStatus';
+      statusEl.className = 'about-ver-status';
+      info.appendChild(statusEl);
+    }
+  }
+  if (statusEl) {
+    statusEl.textContent = `${APP_VERSION} · 自动更新 · 已是最新`;
+    statusEl.classList.remove('hidden');
+  }
+}
+
 async function boot() {
   // 清理旧 SW 缓存（必要时 reload 一次）
   const cleaned = await cleanupLegacySW();
@@ -2324,6 +2403,8 @@ async function boot() {
     console.error('Boot error:', err);
     showToast('初始化失败：' + err.message);
   }
+  // 版本变化检测（必须在 renderAll 之后，关于页 DOM 已就位）
+  checkVersionUpgrade();
   // 无论是否抛错，splash 必须消失
   setTimeout(() => {
     $('#splash').classList.add('hidden');

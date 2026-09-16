@@ -44,7 +44,7 @@
      * 这样不会被 webview / SW 缓存住的旧 about-ver 文本欺骗 */
     window.__APP_VERSION__ = 'v2.2.7';
     document.addEventListener('DOMContentLoaded', function () {
-      var el = document.querySelector('.about-ver');
+      var el = document.getElementById('aboutVer');
       if (el) el.textContent = 'v2.2.7 · 自动更新';
     });
   </script>
@@ -391,7 +391,8 @@
             <img src="icon.svg" class="about-icon" alt="" />
             <div class="about-info">
               <div class="about-name">小喵成长记</div>
-              <div class="about-ver">v2.2.7 · 自动更新</div>
+              <div class="about-ver" id="aboutVer">v2.2.7 · 自动更新</div>
+              <div class="about-ver-status hidden" id="aboutVerStatus">已是最新</div>
             </div>
           </div>
           <div class="setting-item" id="check-update-row" style="cursor:pointer;">

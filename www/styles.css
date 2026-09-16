@@ -759,6 +759,17 @@ body {
   color: var(--text-soft);
   margin-top: 2px;
 }
+.about-ver-status {
+  font-size: 11px;
+  color: #3D7B1F;
+  background: #D6F0D2;
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin-top: 6px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
 
 /* ====================================================================
  *  表单
