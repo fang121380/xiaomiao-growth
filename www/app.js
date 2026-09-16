@@ -4,7 +4,7 @@
  * ==================================================================== */
 
 const APP_VERSION = 'v2.2.3';
-const APK_VERSION_CODE = 7;  // 与 android/app/build.gradle 的 versionCode 同步
+const APK_VERSION_CODE = 9;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 体重单位（输入 g，存储 g，展示 kg） ============ */
 const fmtKg = g => g ? (Number(g) / 1000).toFixed(2) + ' kg' : '—';
