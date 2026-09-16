@@ -3,8 +3,8 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.2.3';
-const APK_VERSION_CODE = 10;  // 与 android/app/build.gradle 的 versionCode 同步
+const APP_VERSION = 'v2.2.7';
+const APK_VERSION_CODE = 11;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 体重单位（输入 g，存储 g，展示 kg） ============ */
 const fmtKg = g => g ? (Number(g) / 1000).toFixed(2) + ' kg' : '—';
@@ -2342,7 +2342,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 6;  // 与 www/version.json 同步
+const LOCAL_BUILD = 8;  // 与 www/version.json 同步
 let remoteUpdateInfo = null;
 
 async function checkRemoteUpdate() {
@@ -2405,7 +2405,7 @@ async function checkApkUpdate() {
  * 用于「立即检查更新」按钮的主动诊断
  */
 async function checkApkUpdateVerbose(verbose) {
-  const url = 'https://xiaomiao-toh.pages.dev/www/apk-version.json?_=' + Date.now();
+  const url = 'https://xiaomiao-toh.pages.dev/apk-version.json?_=' + Date.now();
   try {
     const r = await fetch(url, { cache: 'no-store', mode: 'cors' });
     if (!r.ok) {

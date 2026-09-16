@@ -1,7 +1,7 @@
 {
-  "versionCode": 10,
-  "versionName": "2.2.6",
-  "downloadUrl": "https://xiaomiao-toh.pages.dev/apks/xiaomiao-v2.2.6.apk",
-  "changelog": "彻底解决 SW 缓存锁死旧版的问题：sw.js 改为自杀版（install 时清所有 cache + unregister 自己），覆盖安装新 APK 后下次启动自动解锁，新版正常加载",
+  "versionCode": 11,
+  "versionName": "2.2.7",
+  "downloadUrl": "https://xiaomiao-toh.pages.dev/apks/xiaomiao-v2.2.7.apk",
+  "changelog": "v2.2.7 关键修复：①修 APP_VERSION 写死为 v2.2.3 的 bug（无论装哪个版本都显示 v2.2.3，导致用户以为升级失败死循环）②修 apk-version.json 的 downloadUrl 指向错的 /www/ 路径（CF Pages 上根本没这个路径）③修 app.js fetch URL 路径（去掉错的多余 /www/ 前缀）。从此关于页正确显示当前版本号，更新检测正常工作。",
   "force": false
 }
