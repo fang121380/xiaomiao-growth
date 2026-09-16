@@ -1,7 +1,7 @@
 {
   "versionCode": 10,
   "versionName": "2.2.6",
-  "downloadUrl": "https://xiaomiao-toh.pages.dev/www/xiaomiao-v2.2.6.apk",
+  "downloadUrl": "https://xiaomiao-toh.pages.dev/apks/xiaomiao-v2.2.6.apk",
   "changelog": "彻底解决 SW 缓存锁死旧版的问题：sw.js 改为自杀版（install 时清所有 cache + unregister 自己），覆盖安装新 APK 后下次启动自动解锁，新版正常加载",
   "force": false
 }
