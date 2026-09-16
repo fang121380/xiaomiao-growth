@@ -1,8 +1,8 @@
 {
-  "build": 10,
-  "version": "v2.2.9",
+  "build": 11,
+  "version": "v2.2.10",
   "released": "2026-09-16",
-  "changelog": "v2.2.9 修复 launcher 图标：之前 v2.2.5 替换图标时只更新了 www/icon-*.png，没更新 mipmap-*/ic_launcher.png（Android 系统 launcher 用的资源），所以 launcher 一直显示默认 Capacitor 模板。",
+  "changelog": "v2.2.10 关键修复：删掉 capacitor.config.json 的 server.url，让 WebView 走本地 assets。",
   "force": false,
   "min_supported_build": 4
 }

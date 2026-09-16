@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <link rel="manifest" href="manifest.json" />
-  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+  <link rel="icon" type="image/png" href="icon-180.png" />
   <link rel="apple-touch-icon" href="icon-180.png" />
   <title>小喵成长记</title>
   <link rel="stylesheet" href="styles.css" />
@@ -42,10 +42,10 @@
 
     /* 版本注入：无论 SW 缓存了什么 HTML，都强制覆盖"关于"卡片里的版本号
      * 这样不会被 webview / SW 缓存住的旧 about-ver 文本欺骗 */
-    window.__APP_VERSION__ = 'v2.2.7';
+    window.__APP_VERSION__ = 'v2.2.10';
     document.addEventListener('DOMContentLoaded', function () {
-      var el = document.querySelector('.about-ver');
-      if (el) el.textContent = 'v2.2.7 · 自动更新';
+      var el = document.getElementById('aboutVer');
+      if (el) el.textContent = 'v2.2.10 · 自动更新';
     });
   </script>
 </head>
@@ -391,8 +391,14 @@
             <img src="icon.svg" class="about-icon" alt="" />
             <div class="about-info">
               <div class="about-name">小喵成长记</div>
-              <div class="about-ver">v2.2.7 · 自动更新</div>
+              <div class="about-ver" id="aboutVer">v2.2.10 · 自动更新</div>
+              <div class="about-ver-status hidden" id="aboutVerStatus">已是最新</div>
             </div>
+          </div>
+          <div class="setting-item" id="check-update-row" style="cursor:pointer;">
+            <span class="setting-icon">🔄</span>
+            <span class="setting-label">立即检查更新</span>
+            <span class="setting-arrow">›</span>
           </div>
         </div>
       </section>
