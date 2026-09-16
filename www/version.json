@@ -1,8 +1,8 @@
 {
-  "build": 8,
-  "version": "v2.2.7",
+  "build": 9,
+  "version": "v2.2.8",
   "released": "2026-09-16",
-  "changelog": "v2.2.7 关键修复：①修 APP_VERSION 写死为 v2.2.3 的 bug（无论装哪个版本都显示 v2.2.3，导致用户以为升级失败死循环）②修 apk-version.json 的 downloadUrl 指向错的 /www/ 路径（CF Pages 上根本没这个路径）③修 app.js fetch URL 路径（去掉错的多余 /www/ 前缀）。从此关于页正确显示当前版本号，更新检测正常工作。",
+  "changelog": "v2.2.8 新增升级反馈：boot() 自动检测 versionCode 变化并弹 '🎉 已升级到 v2.2.8' toast；关于页加绿色「已是最新」标识。从此装上新版本能立刻看到反馈。",
   "force": false,
   "min_supported_build": 4
 }
