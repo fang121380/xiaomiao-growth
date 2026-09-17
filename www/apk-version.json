@@ -1,7 +1,7 @@
 {
-  "versionCode": 17,
+  "versionCode": 18,
   "versionName": "2.3.0",
   "downloadUrl": "https://xiaomiao-toh.pages.dev/apks/xiaomiao-v2.3.0.apk",
-  "changelog": "v2.3.0: 🌙 深色模式（设置页 3 选项：浅色 / 深色 / 跟系统）｜📄 PDF 导出（设置页选格式，A4 成长摘要卡，中文完美）｜🎉 里程碑 / 月报分享卡（Canvas 渲染 + 一键分享到社交）｜🛡️ AI 容错（20s 超时 + 2 次重试 + 友好错误提示）",
+  "changelog": "v2.3.0: 🌙 深色模式（设置页 3 选项：浅色 / 深色 / 跟系统）｜📄 PDF 导出（设置页选格式，A4 成长摘要卡，中文完美）｜🎉 里程碑 / 月报分享卡（Canvas 渲染 + 一键分享到社交）｜🛡️ AI 容错（20s 超时 + 2 次重试 + 友好错误提示）｜🔄 恢复远程热更新（改 www/ 即生效，不用重装 APK）",
   "force": false
 }

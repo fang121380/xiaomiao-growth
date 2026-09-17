@@ -3052,7 +3052,7 @@ let remoteUpdateInfo = null;
 
 async function checkRemoteUpdate() {
   try {
-    const r = await fetch('version.json?_=' + Date.now(), { cache: 'no-store' });
+    const r = await fetch('https://xiaomiao-toh.pages.dev/www/version.json?_=' + Date.now(), { cache: 'no-store', mode: 'cors' });
     if (!r.ok) return;
     const info = await r.json();
     remoteUpdateInfo = info;
