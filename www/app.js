@@ -3047,7 +3047,8 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 14;  // 与 www/version.json 同步
+const LOCAL_BUILD = 14;  // 与 www/version.json 同步（APK 包内的基线版本）
+const LS_DISMISSED_BUILD = 'xiaomiao.lastDismissedBuild';  // 用户上次"确认/关闭"的 build
 let remoteUpdateInfo = null;
 
 async function checkRemoteUpdate() {
@@ -3057,7 +3058,12 @@ async function checkRemoteUpdate() {
     const info = await r.json();
     remoteUpdateInfo = info;
     const remoteBuild = info.build || 0;
-    if (remoteBuild <= LOCAL_BUILD) return;
+
+    // 用户基线：APK 内的 LOCAL_BUILD 与 localStorage 中用户已确认的 build，取大值
+    // 这样：用户点过×或"立即更新"后，下次打开就不会再弹；下次部署 build 再涨时才会重新弹
+    const dismissedBuild = parseInt(localStorage.getItem(LS_DISMISSED_BUILD) || '0', 10);
+    const effectiveLocal = Math.max(LOCAL_BUILD, dismissedBuild);
+    if (remoteBuild <= effectiveLocal) return;
 
     // 弹一个明显的提示条
     const banner = document.createElement('div');
@@ -3073,7 +3079,12 @@ async function checkRemoteUpdate() {
     document.body.appendChild(banner);
     setTimeout(() => banner.classList.add('show'), 50);
 
+    const dismiss = () => {
+      // 记住用户已确认到哪个 build，下次不会再弹
+      try { localStorage.setItem(LS_DISMISSED_BUILD, String(remoteBuild)); } catch {}
+    };
     banner.querySelector('.update-banner-btn').addEventListener('click', () => {
+      dismiss();
       // 强制 SW 跳过等待 + 通知用户
       if (navigator.serviceWorker && navigator.serviceWorker.controller) {
         navigator.serviceWorker.controller.postMessage('SKIP_WAITING');
@@ -3082,6 +3093,7 @@ async function checkRemoteUpdate() {
       location.reload();
     });
     banner.querySelector('.update-banner-close').addEventListener('click', () => {
+      dismiss();
       banner.classList.remove('show');
       setTimeout(() => banner.remove(), 300);
     });
