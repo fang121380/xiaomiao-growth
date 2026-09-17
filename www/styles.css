@@ -68,6 +68,62 @@
   --topbar-h: 56px;
   --safe-bottom: env(safe-area-inset-bottom, 0);
   --safe-top: env(safe-area-inset-top, 0);
+
+  /* 启动屏渐变 */
+  --splash-1: #FFF1D6;
+  --splash-2: #FFE0B0;
+  --splash-3: #FFD08A;
+}
+
+/* ====== 深色主题 ====== */
+:root[data-theme="dark"] {
+  /* 主色保持温暖品牌感，反差柔和 */
+  --primary: #F5B47B;
+  --primary-deep: #F5A86B;
+  --primary-light: #4A3826;
+  --primary-soft: #3A2E20;
+
+  /* 金色（反转，让 brand 不刺眼） */
+  --gold-light: #5A4A38;
+  --gold: #C9A058;
+  --gold-deep: #FFE5B8;
+
+  /* 背景（暖黑，避免纯黑刺眼） */
+  --bg: #1A1612;
+  --bg-card: #2A2218;
+  --bg-overlay: rgba(42, 34, 24, 0.82);
+  --bg-elevated: #2A2218;
+
+  /* 文字（暖白） */
+  --text: #F0E8DC;
+  --text-soft: #C0B0A0;
+  --text-muted: #8A7868;
+
+  /* 边框 */
+  --border: #3A2E22;
+  --border-soft: #2F261C;
+  --border-strong: #5A4A38;
+
+  /* 语义色（背景更深，前景更亮） */
+  --success: #7FC84A;
+  --success-bg: #2A4A1A;
+  --warning: #F5A86B;
+  --danger: #F07575;
+  --danger-bg: #4A2020;
+  --info: #7AC4DC;
+  --info-bg: #1A3848;
+
+  /* shadow 用更深的 alpha */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.7);
+
+  /* 启动屏渐变（dark 下用品牌暖色深版） */
+  --splash-1: #2A2018;
+  --splash-2: #3A2E22;
+  --splash-3: #4A3826;
 }
 
 /* ====== 重置 ====== */
@@ -100,7 +156,7 @@ body {
 .splash {
   position: fixed; inset: 0; z-index: 9999;
   display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(160deg, #FFF1D6 0%, #FFE0B0 50%, #FFD08A 100%);
+  background: linear-gradient(160deg, var(--splash-1) 0%, var(--splash-2) 50%, var(--splash-3) 100%);
 }
 .splash-inner { text-align: center; }
 .splash-icon {
@@ -896,12 +952,12 @@ body {
  *  弹层（Sheet - 底部抽屉）
  * ==================================================================== */
 .sheet {
-  position: fixed; inset: 0; z-index: 200;
+  position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 200;
   display: flex; flex-direction: column; justify-content: flex-end;
   animation: sheetIn 0.3s var(--ease-out);
 }
 .sheet-mask {
-  position: absolute; inset: 0;
+  position: absolute; top: 0; right: 0; bottom: 0; left: 0;
   background: rgba(0, 0, 0, 0.45);
   animation: maskIn 0.3s var(--ease-out);
 }
@@ -2155,6 +2211,34 @@ body {
   padding-bottom: 6px;
   border-bottom: 1px dashed #f0d8b8;
 }
+
+/* ===== 导出格式选择（JSON / PDF） ===== */
+.export-options {
+  display: flex; flex-direction: column;
+  gap: 10px;
+  padding: 0 16px 20px;
+}
+.export-opt {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px;
+  border-radius: var(--r);
+  background: var(--bg-card);
+  border: 1px solid var(--border-soft);
+  cursor: pointer;
+  transition: transform 0.15s var(--spring), background 0.2s;
+  width: 100%;
+  text-align: left;
+}
+.export-opt:active { transform: scale(0.98); background: var(--primary-soft); }
+.export-opt-icon {
+  width: 44px; height: 44px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+.export-opt-info { flex: 1; min-width: 0; }
+.export-opt-title { font-size: 15px; font-weight: 600; color: var(--text); }
+.export-opt-desc { font-size: 12px; color: var(--text-soft); margin-top: 3px; }
 
 /* ===== Accordion（健康提醒折叠） ===== */
 .accordion-group {

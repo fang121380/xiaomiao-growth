@@ -1,7 +1,7 @@
 {
-  "versionCode": 16,
-  "versionName": "2.2.12",
-  "downloadUrl": "https://xiaomiao-toh.pages.dev/apks/xiaomiao-v2.2.12.apk",
-  "changelog": "v2.2.12: 删掉旧的 icon.svg（是只绿眼睛的猫，跟 icon-512.png 不是同一只！），web 端所有图标引用换成 icon-512.png（用户指定的蓝眼睛金渐层小猫）。现在 splash / onboarding / favicon / apple-touch-icon / 关于页 logo 全部统一为同一只猫。",
+  "versionCode": 17,
+  "versionName": "2.3.0",
+  "downloadUrl": "https://xiaomiao-toh.pages.dev/apks/xiaomiao-v2.3.0.apk",
+  "changelog": "v2.3.0: 🌙 深色模式（设置页 3 选项：浅色 / 深色 / 跟系统）｜📄 PDF 导出（设置页选格式，A4 成长摘要卡，中文完美）｜🎉 里程碑 / 月报分享卡（Canvas 渲染 + 一键分享到社交）｜🛡️ AI 容错（20s 超时 + 2 次重试 + 友好错误提示）",
   "force": false
 }

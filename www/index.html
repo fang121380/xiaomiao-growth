@@ -12,6 +12,27 @@
   <title>小喵成长记</title>
   <link rel="stylesheet" href="styles.css" />
   <script>
+    /* 主题早期注入：必须放在 stylesheet 之后、所有可见内容之前，防止 FOUC 闪烁
+     * 模式：'local-light' / 'local-dark' / 'system'（system 跟 --- 系统设置） */
+    (function () {
+      try {
+        var mode = localStorage.getItem('xiaomiao.theme') || 'system';
+        var actual;
+        if (mode === 'light' || mode === 'dark') {
+          actual = mode;
+        } else {
+          actual = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+        }
+        document.documentElement.dataset.theme = actual;
+        // 同步浏览器状态栏 / PWA 顶栏色
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', actual === 'dark' ? '#1A1612' : '#FFFAF0');
+      } catch (e) {
+        document.documentElement.dataset.theme = 'light';
+      }
+    })();
+  </script>
+  <script>
     /* v2 强制清理：第一次打开新版时清掉旧 SW + 旧缓存并硬刷新一次 */
     (function () {
       try {
@@ -42,10 +63,10 @@
 
     /* 版本注入：无论 SW 缓存了什么 HTML，都强制覆盖"关于"卡片里的版本号
      * 这样不会被 webview / SW 缓存住的旧 about-ver 文本欺骗 */
-    window.__APP_VERSION__ = 'v2.2.12';
+    window.__APP_VERSION__ = 'v2.3.0';
     document.addEventListener('DOMContentLoaded', function () {
       var el = document.getElementById('aboutVer');
-      if (el) el.textContent = 'v2.2.12 · 自动更新';
+      if (el) el.textContent = 'v2.3.0 · 自动更新';
     });
   </script>
 </head>
@@ -360,6 +381,44 @@
         </div>
 
         <div class="setting-group">
+          <div class="group-label">分享</div>
+          <div class="setting-card list">
+            <button class="list-item" id="shareBtn">
+              <span class="li-icon" style="background:#FFE5B8;color:#C9A058">🎉</span>
+              <span class="li-text">生成成长分享卡</span>
+              <span class="li-arrow">›</span>
+            </button>
+          </div>
+          <div class="setting-hint">
+            生成里程碑卡或本月成长图，一键分享到社交 ✨
+          </div>
+        </div>
+
+        <div class="setting-group">
+          <div class="group-label">主题</div>
+          <div class="setting-card list">
+            <button class="list-item" data-theme-set="light">
+              <span class="li-icon" style="background:#FFF5EA;color:#E07B3A">☀️</span>
+              <span class="li-text">浅色</span>
+              <span class="li-check hidden" data-check="light">✓</span>
+              <span class="li-arrow">›</span>
+            </button>
+            <button class="list-item" data-theme-set="dark">
+              <span class="li-icon" style="background:#1A1612;color:#F5B47B">🌙</span>
+              <span class="li-text">深色</span>
+              <span class="li-check hidden" data-check="dark">✓</span>
+              <span class="li-arrow">›</span>
+            </button>
+            <button class="list-item" data-theme-set="system">
+              <span class="li-icon" style="background:#F0F0F0;color:#666">⚙️</span>
+              <span class="li-text">跟系统</span>
+              <span class="li-check hidden" data-check="system">✓</span>
+              <span class="li-arrow">›</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="setting-group">
           <div class="group-label">数据管理</div>
           <div class="setting-card list">
             <button class="list-item" id="exportBtn">
@@ -391,7 +450,7 @@
             <img src="icon-512.png" class="about-icon" alt="" />
             <div class="about-info">
               <div class="about-name">小喵成长记</div>
-              <div class="about-ver" id="aboutVer">v2.2.12 · 自动更新</div>
+              <div class="about-ver" id="aboutVer">v2.3.0 · 自动更新</div>
               <div class="about-ver-status hidden" id="aboutVerStatus">已是最新</div>
             </div>
           </div>
@@ -533,6 +592,7 @@
   <script src="config.js"></script>
   <script src="breeds.js"></script>
   <script src="knowledge.js"></script>
+  <script src="lib/jspdf.umd.min.js"></script>
   <script src="app.js"></script>
   <script>
     /* 注册 Service Worker（仅 HTTPS / capacitor scheme 下生效） */

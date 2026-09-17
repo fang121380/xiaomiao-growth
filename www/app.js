@@ -3,8 +3,8 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.2.12';
-const APK_VERSION_CODE = 16;  // 与 android/app/build.gradle 的 versionCode 同步
+const APP_VERSION = 'v2.3.0';
+const APK_VERSION_CODE = 17;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
 const LS_LAST_SEEN_VERSION  = 'xiaomiao.lastSeenVersion';     // e.g. 'v2.2.7'
@@ -1546,30 +1546,86 @@ const Assistant = {
 
     // 直接打绝对 URL（CF Pages Function），避开 Android WebView SW 注册失败的问题
     // server 端已配 Access-Control-Allow-Origin: *
-    const res = await fetch('https://xiaomiao-toh.pages.dev/api/deepseek', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const content = await this.fetchWithRetry({
+      url: 'https://xiaomiao-toh.pages.dev/api/deepseek',
+      body: {
         model: window.DEEPSEEK_MODEL || 'deepseek-chat',
         messages: [sysMsg, ...cleanHistory],
-      }),
+      },
+      maxRetries: 2,
+      timeoutMs: 20000,
+      retryDelayMs: 800,
     });
-
-    if (!res.ok) {
-      let errDetail = '';
-      try { errDetail = (await res.json()).error?.message || ''; } catch {}
-      throw new Error(`API ${res.status}${errDetail ? ' · ' + errDetail : ''}`);
-    }
-
-    const data = await res.json();
-    let content = data.choices?.[0]?.message?.content;
-    if (!content) throw new Error('返回为空');
 
     // 前置紧急横幅（前端保险，避免模型偶尔漏掉）
     if (isUrgent && !content.includes('急诊') && !content.includes('立即就医')) {
-      content = `${this.URGENT_BANNER}\n\n${content}`;
+      return `${this.URGENT_BANNER}\n\n${content}`;
     }
     return content;
+  },
+
+  /**
+   * 带 timeout + retry 的 fetch 包装
+   * - AbortController.timeout 控制单次请求最长时长
+   * - 5xx 或网络错自动重试（指数退避），4xx 直接报错
+   * - 错误信息友好化（AbortError / Failed-to-fetch 转中文）
+   */
+  async fetchWithRetry({ url, body, maxRetries = 2, timeoutMs = 20000, retryDelayMs = 800 }) {
+    let lastErr;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: ctrl.signal,
+        });
+        clearTimeout(timer);
+
+        if (res.ok) {
+          const data = await res.json();
+          const content = data.choices?.[0]?.message?.content;
+          if (!content) throw new Error('返回为空');
+          return content;
+        }
+
+        let errDetail = '';
+        try { errDetail = (await res.json()).error?.message || ''; } catch {}
+        const err = new Error(`API ${res.status}${errDetail ? ' · ' + errDetail : ''}`);
+        lastErr = err;
+        // 5xx 重试，4xx 直接抛出
+        if (res.status >= 500 && attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, retryDelayMs * Math.pow(2, attempt)));
+          continue;
+        }
+        throw err;
+      } catch (err) {
+        clearTimeout(timer);
+        lastErr = err;
+        // 网络错 / 超时 → 重试；业务错（API 4xx / 返回为空）→ 直接抛出
+        const isNetworkish = err.name === 'AbortError' ||
+                             err.message.startsWith('Failed to fetch') ||
+                             err.message.includes('NetworkError') ||
+                             err.message.includes('network');
+        if (attempt < maxRetries && isNetworkish) {
+          await new Promise(r => setTimeout(r, retryDelayMs * Math.pow(2, attempt)));
+          continue;
+        }
+        // 友好化错误信息
+        let friendly;
+        if (err.name === 'AbortError') {
+          friendly = `请求超时（>${Math.round(timeoutMs / 1000)}秒）`;
+        } else if (err.message.startsWith('API') || err.message === '返回为空') {
+          friendly = err.message;
+        } else {
+          friendly = `网络开了小差：${err.message}`;
+        }
+        throw new Error(friendly);
+      }
+    }
+    throw lastErr;
   },
 };
 
@@ -1984,6 +2040,37 @@ async function base64ToBlob(dataUrl) {
   return await r.blob();
 }
 
+/* 导出格式选择 sheet */
+function openExportSheet() {
+  openSheet(`
+    <h3>导出全部数据</h3>
+    <p class="sheet-sub">选个格式，机器或人类读都行 🐾</p>
+    <div class="export-options">
+      <button class="export-opt" data-fmt="json">
+        <div class="export-opt-icon" style="background:#D6F0D2;color:#3D7B1F">📤</div>
+        <div class="export-opt-info">
+          <div class="export-opt-title">JSON（机器可读）</div>
+          <div class="export-opt-desc">完整数据 + 照片 base64 · 适合备份还原</div>
+        </div>
+      </button>
+      <button class="export-opt" data-fmt="pdf">
+        <div class="export-opt-icon" style="background:#FCE3E3;color:#D85A8A">📄</div>
+        <div class="export-opt-info">
+          <div class="export-opt-title">PDF（人类可读）</div>
+          <div class="export-opt-desc">A4 成长摘要卡 · 适合分享给家人或存云盘</div>
+        </div>
+      </button>
+    </div>
+  `);
+  document.querySelectorAll('.export-opt').forEach(btn => {
+    btn.addEventListener('click', () => {
+      closeSheet();
+      if (btn.dataset.fmt === 'json') exportData();
+      else if (btn.dataset.fmt === 'pdf') PDF.exportPDF();
+    });
+  });
+}
+
 async function exportData() {
   showToast('准备导出…');
   const photos = await dbGetAllPhotos();
@@ -2010,6 +2097,228 @@ async function exportData() {
   a.click();
   showToast(`已导出 ${state.records.length} 条记录、${photoOut.length} 张照片 📤`);
 }
+
+/* ====================================================================
+ *  PDF 导出（人类可读）
+ *  用 Canvas 画内容 → jsPDF addImage 嵌入 A4
+ *  这样避免 jsPDF 的中文字体嵌入问题（Canvas 用系统字体自动渲染中文）
+ * ==================================================================== */
+const PDF = {
+  async exportPDF() {
+    if (!window.jspdf || !window.jspdf.jsPDF) {
+      showToast('PDF 模块没加载，请检查网络后重试 ❌');
+      return;
+    }
+    showToast('生成 PDF…');
+
+    const W = 595, H = 842; // A4 @ 72dpi（jsPDF pt 单位）
+    const canvas = document.createElement('canvas');
+    canvas.width = W * 2;
+    canvas.height = H * 2;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(2, 2); // 高清
+
+    this._renderCanvas(ctx, W, H);
+
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    const pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+    pdf.addImage(dataUrl, 'JPEG', 0, 0, 210, 297);
+    pdf.save(`xiaomiao-summary-${todayStr()}.pdf`);
+    showToast('PDF 已导出 📄');
+  },
+
+  /**
+   * 在 ctx 上画一张 A4 大小的成长记录摘要
+   */
+  _renderCanvas(ctx, W, H) {
+    const p = state.profile || {};
+    const records = state.records || [];
+
+    // 背景
+    ctx.fillStyle = '#FFFAF0';
+    ctx.fillRect(0, 0, W, H);
+
+    // 顶部 brand 条
+    const grad = ctx.createLinearGradient(0, 0, W, 0);
+    grad.addColorStop(0, '#FFE9D3');
+    grad.addColorStop(1, '#FFE5B8');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, 90);
+
+    // 标题
+    ctx.fillStyle = '#3A2A1F';
+    ctx.font = 'bold 32px "PingFang SC", "Microsoft YaHei", sans-serif';
+    ctx.fillText('小喵成长记', 50, 50);
+    ctx.font = '14px "PingFang SC", sans-serif';
+    ctx.fillStyle = '#8A7466';
+    ctx.fillText('Xiaomiao Growth Journal · 成长摘要', 50, 74);
+
+    // 分隔线
+    this._line(ctx, 50, 110, W - 50, 110, '#F0E3D4');
+
+    // ───── 小猫资料 ─────
+    let y = 140;
+    ctx.fillStyle = '#E07B3A';
+    ctx.font = 'bold 16px "PingFang SC", sans-serif';
+    ctx.fillText('🐱 小猫资料', 50, y);
+    y += 24;
+
+    ctx.font = '14px "PingFang SC", sans-serif';
+    const profileRows = [
+      ['名字', p.name || '—'],
+      ['品种', p.breed ? `${p.breed}${p.breedSci ? ' (' + p.breedSci + ')' : ''}` : '—'],
+      ['性别', p.gender === 'male' ? '弟弟 ♂' : p.gender === 'female' ? '妹妹 ♀' : '未知'],
+      ['出生', p.birthDate || '—'],
+      ['到家', p.adoptDate || '—'],
+      ['陪伴', p.birthDate ? daysBetween(p.birthDate, new Date().toISOString().slice(0,10)) + ' 天' : '—'],
+    ];
+    profileRows.forEach(([k, v]) => {
+      ctx.fillStyle = '#8A7466';
+      ctx.fillText(k, 60, y);
+      ctx.fillStyle = '#3A2A1F';
+      ctx.font = '14px "PingFang SC", sans-serif';
+      ctx.fillText(String(v).slice(0, 30), 140, y);
+      ctx.font = '14px "PingFang SC", sans-serif';
+      y += 22;
+    });
+
+    // ───── 统计 ─────
+    y += 14;
+    ctx.fillStyle = '#E07B3A';
+    ctx.font = 'bold 16px "PingFang SC", sans-serif';
+    ctx.fillText('📈 记录统计', 50, y);
+    y += 24;
+
+    const counts = {};
+    records.forEach(r => { counts[r.type] = (counts[r.type] || 0) + 1; });
+    const total = records.length;
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
+    const monthCount = records.filter(r => (r.when || r.date) >= monthStart).length;
+
+    // 类型分布（前 6 个）
+    const topTypes = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,6);
+
+    // 3 列概览
+    const statBoxes = [
+      { label: '总记录', value: String(total), color: '#F5A86B' },
+      { label: '本月新增', value: String(monthCount), color: '#5FA8C8' },
+      { label: '类型数', value: String(Object.keys(counts).length), color: '#5FA82C' },
+    ];
+    const boxW = (W - 100 - 20) / 3;
+    statBoxes.forEach((b, i) => {
+      const x = 50 + i * (boxW + 10);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.strokeStyle = b.color;
+      ctx.lineWidth = 1.5;
+      this._roundRect(ctx, x, y, boxW, 60, 8);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = b.color;
+      ctx.font = 'bold 22px "PingFang SC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(b.value, x + boxW/2, y + 28);
+      ctx.fillStyle = '#8A7466';
+      ctx.font = '12px "PingFang SC", sans-serif';
+      ctx.fillText(b.label, x + boxW/2, y + 48);
+      ctx.textAlign = 'left';
+    });
+    y += 80;
+
+    // 类型分布条
+    if (topTypes.length > 0) {
+      ctx.fillStyle = '#8A7466';
+      ctx.font = '13px "PingFang SC", sans-serif';
+      ctx.fillText('记录类型分布', 50, y);
+      y += 16;
+      const max = topTypes[0][1];
+      topTypes.forEach(([type, n]) => {
+        const label = (RECORD_TYPES[type]?.label) || type;
+        const emoji = (RECORD_TYPES[type]?.emoji) || '•';
+        ctx.fillStyle = '#3A2A1F';
+        ctx.font = '13px "PingFang SC", sans-serif';
+        ctx.fillText(`${emoji} ${label}`, 60, y);
+        // 条
+        const barX = 200, barMaxW = 250, barH = 10;
+        ctx.fillStyle = '#F8EFE3';
+        this._roundRect(ctx, barX, y - 9, barMaxW, barH, 4);
+        ctx.fill();
+        ctx.fillStyle = '#F5A86B';
+        const w = Math.max(2, (n / max) * barMaxW);
+        this._roundRect(ctx, barX, y - 9, w, barH, 4);
+        ctx.fill();
+        ctx.fillStyle = '#3A2A1F';
+        ctx.font = '13px "PingFang SC", sans-serif';
+        ctx.fillText(`${n} 次`, barX + barMaxW + 10, y);
+        y += 22;
+      });
+    }
+
+    // ───── 最近记录 ─────
+    y += 14;
+    if (y > H - 200) y = H - 200; // 防溢出
+    ctx.fillStyle = '#E07B3A';
+    ctx.font = 'bold 16px "PingFang SC", sans-serif';
+    ctx.fillText('📝 最近 8 条记录', 50, y);
+    y += 24;
+
+    const recent = [...records].sort((a,b) => (b.when||b.date||'').localeCompare(a.when||a.date||'')).slice(0, 8);
+    if (recent.length === 0) {
+      ctx.fillStyle = '#B5A293';
+      ctx.font = '13px "PingFang SC", sans-serif';
+      ctx.fillText('还没有记录', 60, y);
+      y += 22;
+    } else {
+      recent.forEach(r => {
+        if (y > H - 60) return;
+        const emoji = (RECORD_TYPES[r.type]?.emoji) || '•';
+        const label = (RECORD_TYPES[r.type]?.label) || r.type;
+        const when = (r.when || r.date || '').slice(5); // MM-DD
+        const title = r.title ? ` · ${r.title}` : '';
+        const value = r.value ? ` · ${r.value}` : '';
+        ctx.fillStyle = '#8A7466';
+        ctx.font = '12px "PingFang SC", sans-serif';
+        ctx.fillText(when, 60, y);
+        ctx.fillStyle = '#3A2A1F';
+        ctx.font = '13px "PingFang SC", sans-serif';
+        const text = `${emoji} ${label}${title}${value}`;
+        ctx.fillText(text.slice(0, 50), 110, y);
+        y += 20;
+      });
+    }
+
+    // 底部
+    const footerY = H - 30;
+    this._line(ctx, 50, footerY - 10, W - 50, footerY - 10, '#F0E3D4');
+    ctx.fillStyle = '#B5A293';
+    ctx.font = '11px "PingFang SC", sans-serif';
+    ctx.fillText(`生成于 ${nowStr()} · 小喵成长记 ${APP_VERSION}`, 50, footerY);
+    ctx.fillText('🐾', W - 70, footerY);
+  },
+
+  _line(ctx, x1, y1, x2, y2, color) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  },
+
+  _roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  },
+};
 async function importData(file) {
   try {
     const text = await file.text();
@@ -2047,6 +2356,310 @@ async function clearAll() {
   maybeOnboard();
   showToast('已清空');
 }
+
+/* ====================================================================
+ *  主题（浅色 / 深色 / 跟系统）
+ *  - FOUC 防闪烁：head 里的早期 script 已经在首屏绘制前设好 dataset.theme
+ *  - 这里负责：UI 绑定 + 持久化 + 监听系统主题切换（system 模式下）
+ * ==================================================================== */
+const Theme = {
+  STORAGE_KEY: 'xiaomiao.theme',
+
+  init() {
+    // 1. 重新 apply 一次（FOUC script 已经做过，这里保险）
+    this.apply(this.getStoredMode());
+
+    // 2. 绑定设置页的 3 个选项
+    document.querySelectorAll('[data-theme-set]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.set(btn.dataset.themeSet);
+        showToast(this._label(btn.dataset.themeSet) + ' 已应用 ✨');
+      });
+    });
+
+    // 3. 监听系统主题变化（仅 system 模式生效）
+    if (window.matchMedia) {
+      const mql = window.matchMedia('(prefers-color-scheme: dark)');
+      mql.addEventListener && mql.addEventListener('change', () => {
+        if (this.getStoredMode() === 'system') this.apply('system');
+      });
+    }
+
+    // 4. 同步打勾状态
+    this.syncUI();
+  },
+
+  getStoredMode() {
+    return localStorage.getItem(this.STORAGE_KEY) || 'system';
+  },
+
+  set(mode) {
+    if (mode !== 'light' && mode !== 'dark' && mode !== 'system') return;
+    localStorage.setItem(this.STORAGE_KEY, mode);
+    this.apply(mode);
+    this.syncUI();
+  },
+
+  apply(mode) {
+    const actual = (mode === 'light' || mode === 'dark')
+      ? mode
+      : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+    document.documentElement.dataset.theme = actual;
+    // 同步浏览器 / PWA 顶栏色
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', actual === 'dark' ? '#1A1612' : '#FFFAF0');
+  },
+
+  syncUI() {
+    const current = this.getStoredMode();
+    document.querySelectorAll('[data-check]').forEach(el => {
+      el.classList.toggle('hidden', el.dataset.check !== current);
+    });
+  },
+
+  _label(mode) {
+    return mode === 'light' ? '浅色' : mode === 'dark' ? '深色' : '跟系统';
+  },
+};
+
+/* ====================================================================
+ *  分享卡（里程碑 / 本月成长）
+ *  用 Canvas 画图 + navigator.share（Android WebView 支持）
+ *  兜底：<a download>
+ * ==================================================================== */
+const Share = {
+  openSheet() {
+    openSheet(`
+      <h3>生成成长分享卡</h3>
+      <p class="sheet-sub">挑个模板，分享给家人好友 ✨</p>
+      <div class="export-options">
+        <button class="export-opt" data-kind="milestone">
+          <div class="export-opt-icon" style="background:#FFE5B8;color:#C9A058">🎂</div>
+          <div class="export-opt-info">
+            <div class="export-opt-title">里程碑卡</div>
+            <div class="export-opt-title" style="font-weight:400;font-size:12px;color:var(--text-soft);margin-top:3px">陪伴 X 天 · 简洁好看</div>
+          </div>
+        </button>
+        <button class="export-opt" data-kind="monthly">
+          <div class="export-opt-icon" style="background:#E0F0F5;color:#5FA8C8">📊</div>
+          <div class="export-opt-info">
+            <div class="export-opt-title">本月成长</div>
+            <div class="export-opt-title" style="font-weight:400;font-size:12px;color:var(--text-soft);margin-top:3px">本月记录 + 体重变化 + 类型分布</div>
+          </div>
+        </button>
+      </div>
+    `);
+    document.querySelectorAll('.export-opt').forEach(btn => {
+      btn.addEventListener('click', () => {
+        closeSheet();
+        if (btn.dataset.kind === 'milestone') this.generateMilestone();
+        else if (btn.dataset.kind === 'monthly') this.generateMonthly();
+      });
+    });
+  },
+
+  async generateMilestone() {
+    const p = state.profile || {};
+    if (!p.birthDate) {
+      showToast('还没设置出生日期，去设置页补一下 ❌');
+      return;
+    }
+    showToast('生成中…');
+    const W = 750, H = 1000; // 3:4 比例，适合小红书 / 朋友圈
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    this._renderMilestone(ctx, W, H, p);
+    await this._shareOrDownload(canvas, `xiaomiao-milestone-${todayStr()}.jpg`);
+  },
+
+  _renderMilestone(ctx, W, H, p) {
+    const days = daysBetween(p.birthDate, new Date().toISOString().slice(0,10));
+    const months = Math.floor(days / 30);
+
+    // 背景渐变
+    const bg = ctx.createLinearGradient(0, 0, W, H);
+    bg.addColorStop(0, '#FFE9D3');
+    bg.addColorStop(0.5, '#FFE5B8');
+    bg.addColorStop(1, '#FFD08A');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // 装饰圆（半透明白）
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.beginPath(); ctx.arc(W - 80, 90, 70, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(70, H - 220, 100, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(W - 150, H - 100, 50, 0, Math.PI * 2); ctx.fill();
+
+    // 小标题
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#8A7466';
+    ctx.font = '28px "PingFang SC", "Microsoft YaHei", sans-serif';
+    ctx.fillText(`${p.name || '小猫'} 的成长时光`, W / 2, 230);
+
+    // 主数字
+    ctx.fillStyle = '#3A2A1F';
+    ctx.font = 'bold 200px "PingFang SC", sans-serif';
+    ctx.fillText(String(days), W / 2, H / 2 + 30);
+    ctx.font = 'bold 56px "PingFang SC", sans-serif';
+    ctx.fillStyle = '#E07B3A';
+    ctx.fillText('天', W / 2, H / 2 + 110);
+
+    // 副标
+    ctx.font = 'bold 32px "PingFang SC", sans-serif';
+    ctx.fillStyle = '#3A2A1F';
+    ctx.fillText(`${months} 个月大`, W / 2, H / 2 + 200);
+
+    // 小标语
+    ctx.font = '24px "PingFang SC", sans-serif';
+    ctx.fillStyle = '#8A7466';
+    ctx.fillText('🐾 陪伴就是最长情的告白', W / 2, H / 2 + 260);
+
+    // 底部 brand
+    ctx.font = '20px "PingFang SC", sans-serif';
+    ctx.fillStyle = '#8A7466';
+    ctx.fillText('小喵成长记 · xiaomiao', W / 2, H - 50);
+    ctx.textAlign = 'left';
+  },
+
+  async generateMonthly() {
+    const p = state.profile || {};
+    const records = state.records || [];
+    showToast('生成中…');
+    const W = 750, H = 1000;
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    this._renderMonthly(ctx, W, H, p, records);
+    await this._shareOrDownload(canvas, `xiaomiao-monthly-${todayStr()}.jpg`);
+  },
+
+  _renderMonthly(ctx, W, H, p, records) {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
+    const monthRecords = records.filter(r => (r.when || r.date || '') >= monthStart);
+
+    // 背景渐变
+    const bg = ctx.createLinearGradient(0, 0, W, H);
+    bg.addColorStop(0, '#E0F0F5');
+    bg.addColorStop(1, '#FFE9D3');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // 标题
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#3A2A1F';
+    ctx.font = 'bold 40px "PingFang SC", sans-serif';
+    ctx.fillText(`📊 ${p.name || '小猫'} 的本月成长`, W / 2, 100);
+    ctx.font = '22px "PingFang SC", sans-serif';
+    ctx.fillStyle = '#8A7466';
+    const monthLabel = `${now.getFullYear()}年${now.getMonth() + 1}月`;
+    ctx.fillText(monthLabel, W / 2, 140);
+
+    // 大数字
+    ctx.fillStyle = '#5FA8C8';
+    ctx.font = 'bold 160px "PingFang SC", sans-serif';
+    ctx.fillText(String(monthRecords.length), W / 2, 340);
+    ctx.font = 'bold 28px "PingFang SC", sans-serif';
+    ctx.fillStyle = '#3A2A1F';
+    ctx.fillText('条记录', W / 2, 380);
+
+    // 类型分布
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 28px "PingFang SC", sans-serif';
+    ctx.fillStyle = '#E07B3A';
+    ctx.fillText('类型分布', 80, 460);
+
+    const counts = {};
+    monthRecords.forEach(r => { counts[r.type] = (counts[r.type] || 0) + 1; });
+    const sorted = Object.entries(counts).sort((a,b) => b[1]-a[1]).slice(0, 6);
+    const max = sorted[0] ? sorted[0][1] : 1;
+
+    let y = 510;
+    sorted.forEach(([type, n]) => {
+      const label = (RECORD_TYPES[type]?.label) || type;
+      const emoji = (RECORD_TYPES[type]?.emoji) || '•';
+      ctx.font = '24px "PingFang SC", sans-serif';
+      ctx.fillStyle = '#3A2A1F';
+      ctx.fillText(`${emoji} ${label}`, 80, y);
+
+      const barX = 280, barMaxW = 320, barH = 18;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      this._roundRect(ctx, barX, y - 14, barMaxW, barH, 6);
+      ctx.fill();
+      ctx.fillStyle = '#F5A86B';
+      const w = Math.max(4, (n / max) * barMaxW);
+      this._roundRect(ctx, barX, y - 14, w, barH, 6);
+      ctx.fill();
+      ctx.fillStyle = '#3A2A1F';
+      ctx.font = '22px "PingFang SC", sans-serif';
+      ctx.fillText(`${n} 次`, barX + barMaxW + 14, y);
+      y += 50;
+    });
+
+    // 体重变化
+    const weightRecs = monthRecords.filter(r => r.type === 'weight').sort((a,b) => (a.when||a.date).localeCompare(b.when||b.date));
+    if (weightRecs.length >= 2) {
+      const first = parseFloat(weightRecs[0].value) || 0;
+      const last = parseFloat(weightRecs[weightRecs.length-1].value) || 0;
+      const delta = last - first;
+      const arrow = delta > 0 ? '↗' : delta < 0 ? '↘' : '→';
+      const sign = delta > 0 ? '+' : '';
+
+      y += 30;
+      ctx.font = 'bold 28px "PingFang SC", sans-serif';
+      ctx.fillStyle = '#E07B3A';
+      ctx.fillText('体重变化', 80, y);
+      y += 60;
+      ctx.font = 'bold 60px "PingFang SC", sans-serif';
+      ctx.fillStyle = delta > 0 ? '#5FA82C' : delta < 0 ? '#E15555' : '#8A7466';
+      ctx.fillText(`${arrow} ${sign}${delta.toFixed(2)} kg`, 80, y);
+    }
+
+    // 底部
+    ctx.textAlign = 'center';
+    ctx.font = '20px "PingFang SC", sans-serif';
+    ctx.fillStyle = '#8A7466';
+    ctx.fillText('小喵成长记 · 记录每一刻 🐾', W / 2, H - 50);
+    ctx.textAlign = 'left';
+  },
+
+  _roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  },
+
+  async _shareOrDownload(canvas, filename) {
+    canvas.toBlob(async (blob) => {
+      if (!blob) { showToast('生成失败 ❌'); return; }
+      const file = new File([blob], filename, { type: 'image/jpeg' });
+      // 优先用 navigator.share（Android WebView 支持）
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: '小喵成长记', text: '🐾 看看小猫的成长' });
+          return;
+        } catch (err) {
+          if (err.name === 'AbortError') return;
+        }
+      }
+      // 兜底：下载
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      showToast('图片已保存到下载文件夹 📸');
+    }, 'image/jpeg', 0.92);
+  },
+};
 
 /* ====================================================================
  *  事件绑定
@@ -2217,7 +2830,7 @@ function bindEvents() {
   });
 
   // 设置 - 数据管理
-  $('#exportBtn').addEventListener('click', exportData);
+  $('#exportBtn').addEventListener('click', openExportSheet);
   $('#importBtn').addEventListener('click', () => $('#importFile').click());
   $('#importFile').addEventListener('change', e => {
     const f = e.target.files?.[0];
@@ -2228,6 +2841,12 @@ function bindEvents() {
 
   // 助手页
   Assistant.bindHomeEvents();
+
+  // 主题切换
+  Theme.init();
+
+  // 分享
+  $('#shareBtn')?.addEventListener('click', () => Share.openSheet());
 }
 
 /* ====================================================================
