@@ -3047,7 +3047,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 0;  // DEBUG: 与 www/version.json 同步
+const LOCAL_BUILD = 14;  // 与 www/version.json 同步
 let remoteUpdateInfo = null;
 
 async function checkRemoteUpdate() {
