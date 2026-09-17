@@ -4,7 +4,7 @@
  * ==================================================================== */
 
 const APP_VERSION = 'v2.3.0';
-const APK_VERSION_CODE = 17;  // 与 android/app/build.gradle 的 versionCode 同步
+const APK_VERSION_CODE = 18;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
 const LS_LAST_SEEN_VERSION  = 'xiaomiao.lastSeenVersion';     // e.g. 'v2.2.7'
@@ -3047,7 +3047,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 0;  // DEBUG: 与 www/version.json 同步
+const LOCAL_BUILD = 14;  // 与 www/version.json 同步
 let remoteUpdateInfo = null;
 
 async function checkRemoteUpdate() {
