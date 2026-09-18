@@ -1,8 +1,8 @@
 {
-  "build": 16,
-  "version": "v2.3.2",
+  "build": 17,
+  "version": "v2.3.3",
   "released": "2026-09-18",
-  "changelog": "➕ 聊天附件：+ 按钮弹 ActionSheet，支持拍照 / 相册 / 文件三选一",
+  "changelog": "🛠 修带图消息报 API 414（视觉问答改用 multipart POST，避开 GET URL 长度上限）",
   "force": false,
   "min_supported_build": 4
 }

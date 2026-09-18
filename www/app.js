@@ -3,7 +3,7 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.3.2';
+const APP_VERSION = 'v2.3.3';
 const APK_VERSION_CODE = 19;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
@@ -1587,6 +1587,72 @@ const Assistant = {
   },
 
   /**
+   * 把 dataURL 转回 Blob（vision 发送时用，避免 base64 让 URL 超限）
+   */
+  _dataUrlToBlob(dataUrl) {
+    const [head, b64] = dataUrl.split(',');
+    const mime = (head.match(/data:([^;]+)/) || [])[1] || 'image/jpeg';
+    const bin = atob(b64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return new Blob([arr], { type: mime });
+  },
+
+  /**
+   * 带图消息：用 FormData POST 到 /api/vision（multipart，避开 GET URL 长度限制）
+   * 不带图：走原 fetchWithRetry GET+base64 通道（/api/deepseek）
+   */
+  async callVision(text, images) {
+    const form = new FormData();
+    form.append('model', this.VISION_MODEL);
+    form.append('system', this.visionSystemPrompt());
+    form.append('temp', '0.2');
+    form.append('max_tokens', '1000');
+    if (text) form.append('text', text);
+    for (const dataUrl of images) {
+      form.append('images', this._dataUrlToBlob(dataUrl), 'image.jpg');
+    }
+    const url = 'https://xiaomiao-toh.pages.dev/api/vision';
+    let lastErr;
+    for (let attempt = 0; attempt <= 2; attempt++) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 25000);
+      try {
+        const res = await fetch(url, { method: 'POST', body: form, signal: ctrl.signal });
+        clearTimeout(timer);
+        if (res.ok) {
+          const data = await res.json();
+          const content = data.choices?.[0]?.message?.content;
+          if (!content) throw new Error('返回为空');
+          return content;
+        }
+        let errDetail = '';
+        try { errDetail = (await res.json()).error?.message || ''; } catch {}
+        lastErr = new Error(`API ${res.status}${errDetail ? ' · ' + errDetail : ''}`);
+        if (res.status >= 500 && attempt < 2) {
+          await new Promise(r => setTimeout(r, 800 * Math.pow(2, attempt)));
+          continue;
+        }
+        throw lastErr;
+      } catch (err) {
+        clearTimeout(timer);
+        lastErr = err;
+        const isNetworkish = err.name === 'AbortError' ||
+                             err.message.startsWith('Failed to fetch') ||
+                             err.message.includes('NetworkError');
+        if (attempt < 2 && isNetworkish) {
+          await new Promise(r => setTimeout(r, 800 * Math.pow(2, attempt)));
+          continue;
+        }
+        if (err.name === 'AbortError') throw new Error('请求超时（>25秒）');
+        if (err.message.startsWith('API') || err.message === '返回为空') throw err;
+        throw new Error(`网络开了小差：${err.message}`);
+      }
+    }
+    throw lastErr;
+  },
+
+  /**
    * 渲染待发送图片预览条（缩略图 + 删除角标）
    */
   renderPendingImages() {
@@ -1759,7 +1825,10 @@ const Assistant = {
     this.renderMessages();
 
     try {
-      const reply = await this.callDeepSeek(text, userContent);
+      // 带图走 /api/vision (multipart POST)，纯文本走 /api/deepseek (GET+base64)
+      const reply = usedVision
+        ? await this.callVision(text, images)
+        : await this.callDeepSeek(text, userContent);
       this.history = this.history.filter(m => m.content !== '__TYPING__');
       this.history.push({ role: 'assistant', content: reply, usedVision });
     } catch (e) {
@@ -3378,7 +3447,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 16;  // 与 www/version.json 同步（APK 包内的基线版本）
+const LOCAL_BUILD = 17;  // 与 www/version.json 同步（APK 包内的基线版本）
 const LS_DISMISSED_BUILD = 'xiaomiao.lastDismissedBuild';  // 用户上次"确认/关闭"的 build
 let remoteUpdateInfo = null;
 
