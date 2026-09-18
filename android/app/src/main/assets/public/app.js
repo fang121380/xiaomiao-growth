@@ -1576,17 +1576,16 @@ const Assistant = {
       showToast(`已忽略 ${rejected} 个非图片${rejected > 1 ? '' : ''}（${names}${rejected > 2 ? '…' : ''}）`, 2200);
       if (images.length === 0) return;
     }
-    // 上限 1 张（WebView 83 上 GET+base64 是唯一稳定通道，
-    // CF URL 上限 50KB；多张图 URL 会翻倍直接超限，所以视觉问答一次只能发 1 张）
-    const remaining = 1 - this.pendingImages.length;
+    // 上限 4 张（循环调用 callVision，每次单图 GET+base64 不超 50KB URL 上限）
+    const remaining = 4 - this.pendingImages.length;
     if (remaining <= 0) {
-      showToast('AI 视觉问答一次只能发 1 张图（WebView 限制）', 2400);
+      showToast('最多 4 张图', 1800);
       return;
     }
-    if (images.length > 1) {
-      showToast(`视觉问答一次只能发 1 张，已选第 1 张`, 2400);
+    if (images.length > remaining) {
+      showToast(`本次选了 ${images.length} 张，只保留前 ${remaining} 张（最多 4 张）`, 2200);
     }
-    const toProcess = images.slice(0, 1);
+    const toProcess = images.slice(0, remaining);
 
     // Step 1：批量立刻读原图 dataURL 先显示（< 100ms）
     const quickDataUrls = await Promise.all(toProcess.map(file => new Promise((res, rej) => {
@@ -1933,18 +1932,39 @@ const Assistant = {
     this.history.push({ role: 'user', content: userContent });
     this.loading = true;
     // 直接 push 空 bubble 并设 streaming=true，视觉模型期间显示 typing dots + "正在分析图片…"
-    // TODO: 流式回复（callDeepSeekStream + fetchStream）已实现，服务端 stream 模式也 OK，
-    // 但 Android WebView 83 与 SSE 兼容有问题，fetchStream 拿不到 chunk，会抛 Failed to fetch
-    // → fallback 也连带着挂（怀疑是 WebView 对 text/event-stream 的某种副作用）。
-    // 暂时回退非流式 JSON 路径，等排查清楚 WebView 问题再启用流式。
     const bubbleIdx = this.history.length;
     this.history.push({ role: 'assistant', content: '', streaming: true, isVision: usedVision, usedVision });
     this.renderMessages();
 
     try {
       if (usedVision) {
-        const reply = await this.callVision(text, images);
-        this.history[bubbleIdx] = { role: 'assistant', content: reply, usedVision: true };
+        // 多张图：循环每张发一次 GET+base64（单图 URL <50KB 不超限），每个回复独立一个 bubble
+        if (images.length === 1) {
+          const reply = await this.callVision(text, images);
+          this.history[bubbleIdx] = { role: 'assistant', content: reply, usedVision: true };
+        } else {
+          // 第一张图用现有的占位 bubble（已经在 streaming 状态）
+          const firstReply = await this.callVision(text, [images[0]]);
+          this.history[bubbleIdx] = { role: 'assistant', content: firstReply, usedVision: true };
+          this.renderMessages();
+          // 后续每张图单独 push 一个 bubble（串行，避免并发请求互相阻塞 WebView）
+          for (let i = 1; i < images.length; i++) {
+            const idx = this.history.length;
+            this.history.push({ role: 'assistant', content: '', streaming: true, isVision: true, usedVision: true });
+            this.renderMessages();
+            try {
+              const reply = await this.callVision(text, [images[i]]);
+              this.history[idx] = { role: 'assistant', content: reply, usedVision: true };
+            } catch (imgErr) {
+              this.history[idx] = {
+                role: 'assistant',
+                content: `抱歉，分析第 ${i+1} 张图时连不上 AI 😿\n错误：${imgErr.message}`,
+                usedVision: false,
+              };
+            }
+            this.renderMessages();
+          }
+        }
       } else {
         const isUrgent = this.detectUrgent(text);
         // 暂用非流式路径（WebView 83 + 流式兼容性有问题；先让 AI 稳定可用）
