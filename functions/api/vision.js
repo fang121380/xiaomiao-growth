@@ -27,8 +27,10 @@ const DEEPSEEK_URL = 'https://api.deepseek.com/v1/chat/completions';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+  'Access-Control-Max-Age': '86400',
+  // 不带 credentials（请求 from webview 不带 cookie）
 };
 
 export async function onRequestPost(context) {

@@ -1,8 +1,8 @@
 {
-  "build": 17,
-  "version": "v2.3.3",
+  "build": 18,
+  "version": "v2.3.4",
   "released": "2026-09-18",
-  "changelog": "🛠 修带图消息报 API 414（视觉问答改用 multipart POST，避开 GET URL 长度上限）",
+  "changelog": "🛠 修带图消息\"网络开了小差\"（vision 改用 XMLHttpRequest + multipart，绕过 WebView fetch POST 失败 bug）",
   "force": false,
   "min_supported_build": 4
 }

@@ -3,7 +3,7 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.3.3';
+const APP_VERSION = 'v2.3.4';
 const APK_VERSION_CODE = 19;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
@@ -1599,8 +1599,10 @@ const Assistant = {
   },
 
   /**
-   * 带图消息：用 FormData POST 到 /api/vision（multipart，避开 GET URL 长度限制）
-   * 不带图：走原 fetchWithRetry GET+base64 通道（/api/deepseek）
+   * 带图消息：用 XMLHttpRequest POST multipart 到 /api/vision
+   * - 不用 fetch：WebView Chromium 83 + Capacitor remote-loaded 模式下 fetch POST multipart 整个抛 "Failed to fetch"
+   * - XHR + multipart 在 WebView 83 实测可正常发 body
+   * - 不用 GET+base64：图片太大，URL 超 8KB 限制
    */
   async callVision(text, images) {
     const form = new FormData();
@@ -1613,43 +1615,32 @@ const Assistant = {
       form.append('images', this._dataUrlToBlob(dataUrl), 'image.jpg');
     }
     const url = 'https://xiaomiao-toh.pages.dev/api/vision';
-    let lastErr;
-    for (let attempt = 0; attempt <= 2; attempt++) {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 25000);
-      try {
-        const res = await fetch(url, { method: 'POST', body: form, signal: ctrl.signal });
-        clearTimeout(timer);
-        if (res.ok) {
-          const data = await res.json();
-          const content = data.choices?.[0]?.message?.content;
-          if (!content) throw new Error('返回为空');
-          return content;
+
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', url, true);
+      xhr.timeout = 25000;
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            const content = data.choices?.[0]?.message?.content;
+            if (!content) return reject(new Error('返回为空'));
+            resolve(content);
+          } catch (e) {
+            reject(new Error('返回解析失败'));
+          }
+        } else {
+          let detail = '';
+          try { detail = (JSON.parse(xhr.responseText).error?.message) || ''; } catch {}
+          reject(new Error(`API ${xhr.status}${detail ? ' · ' + detail : ''}`));
         }
-        let errDetail = '';
-        try { errDetail = (await res.json()).error?.message || ''; } catch {}
-        lastErr = new Error(`API ${res.status}${errDetail ? ' · ' + errDetail : ''}`);
-        if (res.status >= 500 && attempt < 2) {
-          await new Promise(r => setTimeout(r, 800 * Math.pow(2, attempt)));
-          continue;
-        }
-        throw lastErr;
-      } catch (err) {
-        clearTimeout(timer);
-        lastErr = err;
-        const isNetworkish = err.name === 'AbortError' ||
-                             err.message.startsWith('Failed to fetch') ||
-                             err.message.includes('NetworkError');
-        if (attempt < 2 && isNetworkish) {
-          await new Promise(r => setTimeout(r, 800 * Math.pow(2, attempt)));
-          continue;
-        }
-        if (err.name === 'AbortError') throw new Error('请求超时（>25秒）');
-        if (err.message.startsWith('API') || err.message === '返回为空') throw err;
-        throw new Error(`网络开了小差：${err.message}`);
-      }
-    }
-    throw lastErr;
+      };
+      xhr.onerror = () => reject(new Error('网络开了小差：XHR 网络错误'));
+      xhr.ontimeout = () => reject(new Error('请求超时（>25秒）'));
+      // 不要手动设 Content-Type — 浏览器/WebView 会自动加 boundary
+      xhr.send(form);
+    });
   },
 
   /**
@@ -3447,7 +3438,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 17;  // 与 www/version.json 同步（APK 包内的基线版本）
+const LOCAL_BUILD = 18;  // 与 www/version.json 同步（APK 包内的基线版本）
 const LS_DISMISSED_BUILD = 'xiaomiao.lastDismissedBuild';  // 用户上次"确认/关闭"的 build
 let remoteUpdateInfo = null;
 
