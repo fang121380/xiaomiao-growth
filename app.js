@@ -3,7 +3,7 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.3.6';
+const APP_VERSION = 'v2.3.7';
 const APK_VERSION_CODE = 19;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
@@ -159,10 +159,16 @@ function escapeHtml(s) {
 /* 轻量 markdown 渲染：仅处理 **bold** + \n（AI 回复常用） */
 function renderMarkdownLite(s) {
   const escaped = escapeHtml(s);
-  // 先把 \n 换 <br>，再处理 **xx**
-  return escaped
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\n/g, '<br>');
+  // 把连续空行 (\n\n+) 折叠成段落分隔（避免现有 </div>
+  // 在文本流中制造多余的视觉空白）
+  const paragraphed = escaped.replace(/\n{2,}/g, '</p><p>');
+  const withBreaks = paragraphed.replace(/\n/g, '<br>');
+  // 包裹成段落（提供段落边距）
+  if (paragraphed !== escaped) {
+    return `<p>${withBreaks}</p>`;
+  }
+  // 单换行直接 <br>
+  return withBreaks;
 }
 function greetByHour() {
   const h = new Date().getHours();
@@ -1205,7 +1211,7 @@ const Assistant = {
   VISION_MODEL: 'deepseek-v4-flash',
   TEXT_MODEL: 'deepseek-chat',
   // 是否启用视觉模型的免责声明（用户发图时附在 AI 回复底部）
-  VISION_DISCLAIMER: '\n\n---\n⚠️ **AI 仅供参考，不能替代兽医诊断。**\n紧急情况（呼吸困难、无法排尿、抽搐、严重外伤、持续呕吐等）请**立即就医**。',
+  VISION_DISCLAIMER: '⚠️ **AI 仅供参考，不能替代兽医诊断。**\n紧急情况（呼吸困难、无法排尿、抽搐、严重外伤、持续呕吐等）请**立即就医**。',
 
   render() {
     if (this.chatMode) return; // 聊天模式不重渲染（保留输入状态）
@@ -1568,23 +1574,45 @@ const Assistant = {
       showToast('最多 4 张图', 1800);
       return;
     }
+    // Step 1：立刻用 FileReader 读原图 dataURL 先显示出来（< 50ms）
+    // 同时给缩略图加 .loading 灰色遮罩，等压缩完成再移除
+    const quickDataUrl = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result);
+      r.onerror = rej;
+      r.readAsDataURL(file);
+    });
+    const idx = this.pendingImages.length;
+    this.pendingImages.push(quickDataUrl);
+    this.renderPendingImages();
+    // 给刚 push 的缩略图加 loading 类
+    requestAnimationFrame(() => {
+      const thumb = document.querySelector(`.chat-pending-thumb[data-idx="${idx}"]`);
+      if (thumb) thumb.classList.add('loading');
+    });
+    this.updateSendBtn();
+
+    // Step 2：后台异步压缩到 600px JPEG 0.5（500-2000ms），完成后替换 dataURL
     try {
-      // 复用全局 compressImage(file, maxSize, quality)
-      // 压缩到 600px JPEG 0.5：单图 base64 约 25-35KB，整 URL（含 system prompt ~1.5KB base64）控制在 50KB 内
-      // 实测 DeepSeek-V4-Flash 在 600px 下对猫便便/皮肤/眼睛等关键识别完全够用
       const blob = await compressImage(file, 600, 0.5);
-      const dataUrl = await new Promise((res, rej) => {
+      const compressedDataUrl = await new Promise((res, rej) => {
         const r = new FileReader();
         r.onload = () => res(r.result);
         r.onerror = rej;
         r.readAsDataURL(blob);
       });
-      this.pendingImages.push(dataUrl);
+      this.pendingImages[idx] = compressedDataUrl;
       this.renderPendingImages();
-      this.updateSendBtn();
+      // 移除 loading 类
+      requestAnimationFrame(() => {
+        const thumb = document.querySelector(`.chat-pending-thumb[data-idx="${idx}"]`);
+        if (thumb) thumb.classList.remove('loading');
+      });
     } catch (err) {
-      console.error('图片处理失败', err);
-      showToast('图片处理失败', 1800);
+      console.error('图片压缩失败', err);
+      // 失败时保留原图（不阻塞用户发送）
+      const thumb = document.querySelector(`.chat-pending-thumb[data-idx="${idx}"]`);
+      if (thumb) thumb.classList.remove('loading');
     }
   },
 
@@ -1770,6 +1798,16 @@ const Assistant = {
     if (m.role === 'user' && Array.isArray(m.content)) {
       const images = m.content.filter(c => c.type === 'image_url').map(c => c.image_url.url);
       const text = m.content.find(c => c.type === 'text')?.text || '';
+      // 只有图没文字时，包一层 chat-bubble-text 仅作图片容器（紧凑 padding）
+      // 有文字时走标准的 chat-bubble-text + 文本
+      if (images.length && !text) {
+        return `
+          <div class="chat-bubble user image-only">
+            <div class="chat-bubble-ico">我</div>
+            <div class="chat-bubble-images">${images.map((u, i) => `<img src="${u}" alt="" data-img-idx="${i}" />`).join('')}</div>
+          </div>
+        `;
+      }
       const imagesHtml = images.length
         ? `<div class="chat-bubble-images">${images.map((u, i) => `<img src="${u}" alt="" data-img-idx="${i}" />`).join('')}</div>`
         : '';
@@ -3457,7 +3495,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 20;  // 与 www/version.json 同步（APK 包内的基线版本）
+const LOCAL_BUILD = 21;  // 与 www/version.json 同步（APK 包内的基线版本）
 const LS_DISMISSED_BUILD = 'xiaomiao.lastDismissedBuild';  // 用户上次"确认/关闭"的 build
 let remoteUpdateInfo = null;
 

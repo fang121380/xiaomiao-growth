@@ -1825,7 +1825,7 @@ body {
 }
 .chat-bubble {
   display: flex; gap: 8px;
-  max-width: 92%;
+  max-width: 100%;
   animation: chatIn 0.3s var(--ease-out);
 }
 .chat-bubble.user {
@@ -1858,6 +1858,19 @@ body {
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04);
   flex: 1;
   min-width: 0;
+}
+.chat-bubble-text p {
+  margin: 0;
+}
+.chat-bubble-text p + p {
+  margin-top: 6px;
+}
+.chat-bubble.user.image-only {
+  /* 只有图片的用户气泡：紧凑布局，不要居中 */
+  padding: 0;
+}
+.chat-bubble.user.image-only .chat-bubble-images {
+  margin: 4px 0 4px 0;
 }
 .chat-bubble.user .chat-bubble-text {
   background: var(--primary);
@@ -2124,6 +2137,30 @@ body {
 .chat-pending-thumb.removing {
   animation: thumbOut 0.2s ease-in forwards;
 }
+/* 加载中：灰遮罩 + 旋转圆环 */
+.chat-pending-thumb.loading::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 8px;
+  z-index: 1;
+}
+.chat-pending-thumb.loading::before {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 22px; height: 22px;
+  margin: -11px 0 0 -11px;
+  border: 2.5px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  z-index: 2;
+  animation: thumbSpin 0.8s linear infinite;
+}
+@keyframes thumbSpin {
+  to { transform: rotate(360deg); }
+}
 @keyframes thumbIn {
   0% { transform: scale(0.4); opacity: 0; }
   60% { transform: scale(1.08); opacity: 1; }
@@ -2182,17 +2219,21 @@ body {
 
 /* ============ 视觉模型免责声明 ============ */
 .chat-disclaimer {
-  margin-top: 12px;
-  padding: 12px 14px;
+  margin-top: 8px;
+  padding: 10px 12px;
   background: linear-gradient(135deg, rgba(255, 224, 204, 0.5), rgba(255, 241, 214, 0.5));
   border-left: 3px solid #E07B3A;
   border-radius: 0 8px 8px 0;
   font-size: 12.5px;
-  line-height: 1.7;
+  line-height: 1.65;
   color: var(--text-soft);
   box-shadow: 0 1px 3px rgba(224, 123, 58, 0.08);
 }
 .chat-disclaimer strong { color: #C55318; font-weight: 600; }
+.chat-disclaimer > *:first-child { margin-top: 0; }
+.chat-disclaimer > *:last-child { margin-bottom: 0; }
+.chat-disclaimer p { margin: 4px 0; }
+.chat-disclaimer br + br { display: none; } /* 折叠连续换行 */
 
 /* ============ AI 视觉强调条 ============ */
 .chat-bubble.vision .chat-bubble-text {

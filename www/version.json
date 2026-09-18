@@ -1,8 +1,8 @@
 {
-  "build": 20,
-  "version": "v2.3.6",
+  "build": 21,
+  "version": "v2.3.7",
   "released": "2026-09-18",
-  "changelog": "💬 AI 气泡更宽更易读：宽度 88→92%，纯白背景+边框，字号 14→15px；vision 加载文案不再溢出气泡",
+  "changelog": "💬 4 处体验优化：图片上传即刻显示（带旋转条）；用户纯图气泡去掉空白容器；AI 气泡更宽；段落间距统一",
   "force": false,
   "min_supported_build": 4
 }
