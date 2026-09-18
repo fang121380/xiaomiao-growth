@@ -3,7 +3,7 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.3.2';
+const APP_VERSION = 'v2.3.8';
 const APK_VERSION_CODE = 19;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
@@ -159,10 +159,16 @@ function escapeHtml(s) {
 /* 轻量 markdown 渲染：仅处理 **bold** + \n（AI 回复常用） */
 function renderMarkdownLite(s) {
   const escaped = escapeHtml(s);
-  // 先把 \n 换 <br>，再处理 **xx**
-  return escaped
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\n/g, '<br>');
+  // 把连续空行 (\n\n+) 折叠成段落分隔（避免现有 </div>
+  // 在文本流中制造多余的视觉空白）
+  const paragraphed = escaped.replace(/\n{2,}/g, '</p><p>');
+  const withBreaks = paragraphed.replace(/\n/g, '<br>');
+  // 包裹成段落（提供段落边距）
+  if (paragraphed !== escaped) {
+    return `<p>${withBreaks}</p>`;
+  }
+  // 单换行直接 <br>
+  return withBreaks;
 }
 function greetByHour() {
   const h = new Date().getHours();
@@ -1205,7 +1211,7 @@ const Assistant = {
   VISION_MODEL: 'deepseek-v4-flash',
   TEXT_MODEL: 'deepseek-chat',
   // 是否启用视觉模型的免责声明（用户发图时附在 AI 回复底部）
-  VISION_DISCLAIMER: '\n\n---\n⚠️ **AI 仅供参考，不能替代兽医诊断。**\n紧急情况（呼吸困难、无法排尿、抽搐、严重外伤、持续呕吐等）请**立即就医**。',
+  VISION_DISCLAIMER: '⚠️ **AI 仅供参考，不能替代兽医诊断。**\n紧急情况（呼吸困难、无法排尿、抽搐、严重外伤、持续呕吐等）请**立即就医**。',
 
   render() {
     if (this.chatMode) return; // 聊天模式不重渲染（保留输入状态）
@@ -1399,9 +1405,9 @@ const Assistant = {
     // 创建 3 个隐藏 file input（拍照 / 相册 / 文件）
     if (!this._inputs) {
       this._inputs = {
-        camera: this._makeHiddenInput('image/*', 'environment'),
-        gallery: this._makeHiddenInput('image/*'),
-        files:   this._makeHiddenInput('*/*'),
+        camera:  this._makeHiddenInput('image/*', 'environment', false),  // 拍照固定单张
+        gallery: this._makeHiddenInput('image/*', null,          true),   // 相册允许多选
+        files:   this._makeHiddenInput('*/*',    null,          true),   // 文件允许多选
       };
     }
     this.bindChatEvents();
@@ -1413,12 +1419,14 @@ const Assistant = {
    * 创建一个隐藏的 <input type="file">，挂到 body，change 触发 onAttachImage
    * @param {string} accept MIME 类型
    * @param {string|null} capture 'environment'/'user'/null（null → 文件选择器）
+   * @param {boolean} multiple 是否允许多选（拍照固定单张）
    */
-  _makeHiddenInput(accept, capture) {
+  _makeHiddenInput(accept, capture, multiple = false) {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = accept;
     if (capture) input.capture = capture;
+    if (multiple) input.multiple = true;
     input.style.display = 'none';
     input.addEventListener('change', e => this.onAttachImage(e));
     document.body.appendChild(input);
@@ -1451,14 +1459,14 @@ const Assistant = {
           <span class="chat-attach-emoji">🖼️</span>
           <span class="chat-attach-option-text">
             <strong>相册</strong>
-            <span>从相册选图片</span>
+            <span>从相册多选图片</span>
           </span>
         </button>
         <button class="chat-attach-option" data-src="files">
           <span class="chat-attach-emoji">📎</span>
           <span class="chat-attach-option-text">
             <strong>文件</strong>
-            <span>PDF / 文档（暂仅支持图片）</span>
+            <span>多选文件（暂仅支持图片）</span>
           </span>
         </button>
       </div>
@@ -1550,40 +1558,152 @@ const Assistant = {
 
   /**
    * 处理文件选择（3 个 attach input 共享的 change 回调）
-   * - 图片：压缩到 800px / JPEG 0.7 → 进 pendingImages
+   * - 图片：压缩到 600px / JPEG 0.5 → 进 pendingImages（base64 约 25-35KB，GET URL <50KB）
    * - 非图片（PDF/文档）：暂不支持，toast 提示
    */
   async onAttachImage(e) {
     const input = e.target;
-    const file = input.files?.[0];
-    // 不管结果如何，先清 value（下次可重选同一文件）
+    const files = Array.from(input.files || []);
+    // 不管结果如何，先清 value（下次可重选同一文件，包括多选）
     setTimeout(() => { input.value = ''; }, 100);
-    if (!file) return;
-    // 类型判定
-    if (!file.type.startsWith('image/')) {
-      showToast(`暂只支持图片（你选的是 ${file.name || "文件"}）`, 2200);
-      return;
+    if (files.length === 0) return;
+
+    // 筛选图片（type 判定）
+    const images = files.filter(f => f.type.startsWith('image/'));
+    const rejected = files.length - images.length;
+    if (rejected > 0) {
+      const names = files.filter(f => !f.type.startsWith('image/')).map(f => f.name || '文件').slice(0, 2).join('、');
+      showToast(`已忽略 ${rejected} 个非图片${rejected > 1 ? '' : ''}（${names}${rejected > 2 ? '…' : ''}）`, 2200);
+      if (images.length === 0) return;
     }
-    if (this.pendingImages.length >= 4) {
+    // 上限 4 张
+    const remaining = 4 - this.pendingImages.length;
+    if (remaining <= 0) {
       showToast('最多 4 张图', 1800);
       return;
     }
-    try {
-      // 复用全局 compressImage(file, maxSize, quality)
-      const blob = await compressImage(file, 800, 0.7);
-      const dataUrl = await new Promise((res, rej) => {
-        const r = new FileReader();
-        r.onload = () => res(r.result);
-        r.onerror = rej;
-        r.readAsDataURL(blob);
-      });
-      this.pendingImages.push(dataUrl);
-      this.renderPendingImages();
-      this.updateSendBtn();
-    } catch (err) {
-      console.error('图片处理失败', err);
-      showToast('图片处理失败', 1800);
+    if (images.length > remaining) {
+      showToast(`本次选了 ${images.length} 张，只保留前 ${remaining} 张（最多 4 张）`, 2200);
     }
+    const toProcess = images.slice(0, remaining);
+
+    // Step 1：批量立刻读原图 dataURL 先显示（< 100ms）
+    const quickDataUrls = await Promise.all(toProcess.map(file => new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result);
+      r.onerror = rej;
+      r.readAsDataURL(file);
+    })));
+    const startIdx = this.pendingImages.length;
+    this.pendingImages.push(...quickDataUrls);
+    this.renderPendingImages();
+    // 给刚 push 的缩略图加 loading 类
+    requestAnimationFrame(() => {
+      for (let i = 0; i < toProcess.length; i++) {
+        const thumb = document.querySelector(`.chat-pending-thumb[data-idx="${startIdx + i}"]`);
+        if (thumb) thumb.classList.add('loading');
+      }
+    });
+    this.updateSendBtn();
+
+    // Step 2：后台批量异步压缩到 600px JPEG 0.5
+    toProcess.forEach(async (file, i) => {
+      try {
+        const blob = await compressImage(file, 600, 0.5);
+        const compressedDataUrl = await new Promise((res, rej) => {
+          const r = new FileReader();
+          r.onload = () => res(r.result);
+          r.onerror = rej;
+          r.readAsDataURL(blob);
+        });
+        this.pendingImages[startIdx + i] = compressedDataUrl;
+        this.renderPendingImages();
+        // 移除该缩略图的 loading 类
+        requestAnimationFrame(() => {
+          const thumb = document.querySelector(`.chat-pending-thumb[data-idx="${startIdx + i}"]`);
+          if (thumb) thumb.classList.remove('loading');
+        });
+      } catch (err) {
+        console.error('图片压缩失败', err);
+        // 失败时保留原图（不阻塞用户发送）
+        const thumb = document.querySelector(`.chat-pending-thumb[data-idx="${startIdx + i}"]`);
+        if (thumb) thumb.classList.remove('loading');
+      }
+    });
+  },
+
+  /**
+   * 把 dataURL 转回 Blob（vision 发送时用，避免 base64 让 URL 超限）
+   */
+  _dataUrlToBlob(dataUrl) {
+    const [head, b64] = dataUrl.split(',');
+    const mime = (head.match(/data:([^;]+)/) || [])[1] || 'image/jpeg';
+    const bin = atob(b64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return new Blob([arr], { type: mime });
+  },
+
+  /**
+   * 带图消息：GET + ?d=base64(query) 到 /api/vision
+   * - 跟 chat 纯文本共用同一条 GET 通道，绕开 WebView 83 上所有 POST 路径都坏的 bug
+   * - 图片已在 onAttachImage 压缩到 600px JPEG 0.5（base64 ~25-35KB，URL <50KB）
+   */
+  async callVision(text, images) {
+    // 构造 vision content 数组（base64 dataURL → OpenAI image_url 格式）
+    const content = [];
+    if (text) content.push({ type: 'text', text });
+    for (const url of images) {
+      content.push({ type: 'image_url', image_url: { url } });
+    }
+    const body = {
+      model: this.VISION_MODEL,
+      system: this.visionSystemPrompt(),
+      messages: [{ role: 'user', content }],
+      temperature: 0.2,
+      max_tokens: 1000,
+    };
+    const jsonBody = JSON.stringify(body);
+    const b64Body = btoa(unescape(encodeURIComponent(jsonBody)));
+    const url = 'https://xiaomiao-toh.pages.dev/api/vision?d=' + encodeURIComponent(b64Body);
+
+    let lastErr;
+    for (let attempt = 0; attempt <= 2; attempt++) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 25000);
+      try {
+        const res = await fetch(url, { method: 'GET', signal: ctrl.signal });
+        clearTimeout(timer);
+        if (res.ok) {
+          const data = await res.json();
+          const reply = data.choices?.[0]?.message?.content;
+          if (!reply) throw new Error('返回为空');
+          return reply;
+        }
+        let errDetail = '';
+        try { errDetail = (await res.json()).error?.message || ''; } catch {}
+        lastErr = new Error(`API ${res.status}${errDetail ? ' · ' + errDetail : ''}`);
+        if (res.status >= 500 && attempt < 2) {
+          await new Promise(r => setTimeout(r, 800 * Math.pow(2, attempt)));
+          continue;
+        }
+        throw lastErr;
+      } catch (err) {
+        clearTimeout(timer);
+        lastErr = err;
+        const isNetworkish = err.name === 'AbortError' ||
+                             err.message.startsWith('Failed to fetch') ||
+                             err.message.includes('NetworkError');
+        if (attempt < 2 && isNetworkish) {
+          await new Promise(r => setTimeout(r, 800 * Math.pow(2, attempt)));
+          continue;
+        }
+        if (err.name === 'AbortError') throw new Error('请求超时（>25秒）');
+        if (err.message.startsWith('API') || err.message === '返回为空') throw err;
+        throw new Error(`网络开了小差：${err.message}`);
+      }
+    }
+    throw lastErr;
   },
 
   /**
@@ -1694,6 +1814,16 @@ const Assistant = {
     if (m.role === 'user' && Array.isArray(m.content)) {
       const images = m.content.filter(c => c.type === 'image_url').map(c => c.image_url.url);
       const text = m.content.find(c => c.type === 'text')?.text || '';
+      // 只有图没文字时，包一层 chat-bubble-text 仅作图片容器（紧凑 padding）
+      // 有文字时走标准的 chat-bubble-text + 文本
+      if (images.length && !text) {
+        return `
+          <div class="chat-bubble user image-only">
+            <div class="chat-bubble-ico">我</div>
+            <div class="chat-bubble-images">${images.map((u, i) => `<img src="${u}" alt="" data-img-idx="${i}" />`).join('')}</div>
+          </div>
+        `;
+      }
       const imagesHtml = images.length
         ? `<div class="chat-bubble-images">${images.map((u, i) => `<img src="${u}" alt="" data-img-idx="${i}" />`).join('')}</div>`
         : '';
@@ -1759,7 +1889,10 @@ const Assistant = {
     this.renderMessages();
 
     try {
-      const reply = await this.callDeepSeek(text, userContent);
+      // 带图走 /api/vision (multipart POST)，纯文本走 /api/deepseek (GET+base64)
+      const reply = usedVision
+        ? await this.callVision(text, images)
+        : await this.callDeepSeek(text, userContent);
       this.history = this.history.filter(m => m.content !== '__TYPING__');
       this.history.push({ role: 'assistant', content: reply, usedVision });
     } catch (e) {
@@ -3378,7 +3511,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 16;  // 与 www/version.json 同步（APK 包内的基线版本）
+const LOCAL_BUILD = 22;  // 与 www/version.json 同步（APK 包内的基线版本）
 const LS_DISMISSED_BUILD = 'xiaomiao.lastDismissedBuild';  // 用户上次"确认/关闭"的 build
 let remoteUpdateInfo = null;
 
