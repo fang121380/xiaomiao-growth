@@ -1,8 +1,8 @@
 {
-  "build": 30,
-  "version": "v2.3.16",
+  "build": 31,
+  "version": "v2.3.17",
   "released": "2026-09-18",
-  "changelog": "🐛 视觉问答：回到 GET+base64（唯一实测稳定的 WebView 83 通道），图片压到 400x400 JPEG 0.3 强制 URL <50KB",
+  "changelog": "🐛 视觉问答：图片狠压到 300x300 JPEG 0.2 + 紧凑 base64 编码，URL 几乎必 <25KB；加 URL 长度预检",
   "force": false,
   "min_supported_build": 4
 }

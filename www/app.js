@@ -3,7 +3,7 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.3.16';
+const APP_VERSION = 'v2.3.17';
 const APK_VERSION_CODE = 19;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
@@ -1610,7 +1610,7 @@ const Assistant = {
     // 现在走 XHR POST form-urlencoded 不再受 CF URL 长度限制，可以恢复原画质
     toProcess.forEach(async (file, i) => {
       try {
-        const blob = await compressImage(file, 400, 0.3);
+        const blob = await compressImage(file, 300, 0.2);
         const compressedDataUrl = await new Promise((res, rej) => {
           const r = new FileReader();
           r.onload = () => res(r.result);
@@ -1653,8 +1653,8 @@ const Assistant = {
   async callVision(text, images) {
     // Android WebView 83 上唯一实测可行的稳定通道：GET + ?d=base64(query)。
     // 限制：CF Pages Function 的 URL 长度上限约 50KB。
-    // 因此图片必须在压缩阶段就压到足够小（见 onAttachImage：400x400 JPEG 0.3）。
-    // dataURL 通常 5-15KB，整 URL <50KB，能塞下。
+    // 因此图片必须在压缩阶段就压到足够小（见 onAttachImage：300x300 JPEG 0.2）。
+    // dataURL 通常 3-10KB，整 URL 通常 <25KB，能塞下。
     const content = [];
     if (text) content.push({ type: 'text', text });
     for (const url of images) {
@@ -1669,7 +1669,15 @@ const Assistant = {
     };
     const jsonBody = JSON.stringify(body);
     const b64Body = btoa(unescape(encodeURIComponent(jsonBody)));
-    const url = 'https://xiaomiao-toh.pages.dev/api/vision?d=' + encodeURIComponent(b64Body);
+    // 用紧凑 URL-编码：只转义 + / = ? & #，其他 base64 字符（A-Za-z0-9）原样保留
+    // 比 encodeURIComponent 省约 30% 长度
+    const safeB64 = b64Body.replace(/\+/g, '%2B').replace(/\//g, '%2F').replace(/=/g, '%3D');
+    const url = 'https://xiaomiao-toh.pages.dev/api/vision?d=' + safeB64;
+
+    // 预防性检查：URL 太长就直接报错（CF 上限约 50KB）
+    if (url.length > 45000) {
+      throw new Error(`图片太大（URL ${Math.round(url.length/1024)}KB > 45KB），请换张小的`);
+    }
 
     let lastErr;
     for (let attempt = 0; attempt <= 2; attempt++) {
@@ -3685,7 +3693,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 30;  // 与 www/version.json 同步（APK 包内的基线版本）
+const LOCAL_BUILD = 31;  // 与 www/version.json 同步（APK 包内的基线版本）
 const LS_DISMISSED_BUILD = 'xiaomiao.lastDismissedBuild';  // 用户上次"确认/关闭"的 build
 let remoteUpdateInfo = null;
 
