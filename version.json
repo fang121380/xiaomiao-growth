@@ -1,8 +1,8 @@
 {
-  "build": 29,
-  "version": "v2.3.15",
+  "build": 30,
+  "version": "v2.3.16",
   "released": "2026-09-18",
-  "changelog": "🐛 视觉问答彻底修复：XHR POST + form-urlencoded（不走 multipart 文件字段），绕开 WebView 83 上所有 POST bug；图片恢复 600x600 JPEG 0.5",
+  "changelog": "🐛 视觉问答：回到 GET+base64（唯一实测稳定的 WebView 83 通道），图片压到 400x400 JPEG 0.3 强制 URL <50KB",
   "force": false,
   "min_supported_build": 4
 }
