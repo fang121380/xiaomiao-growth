@@ -3,7 +3,7 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.3.4';
+const APP_VERSION = 'v2.3.5';
 const APK_VERSION_CODE = 19;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
@@ -1550,7 +1550,7 @@ const Assistant = {
 
   /**
    * 处理文件选择（3 个 attach input 共享的 change 回调）
-   * - 图片：压缩到 800px / JPEG 0.7 → 进 pendingImages
+   * - 图片：压缩到 600px / JPEG 0.5 → 进 pendingImages（base64 约 25-35KB，GET URL <50KB）
    * - 非图片（PDF/文档）：暂不支持，toast 提示
    */
   async onAttachImage(e) {
@@ -1570,7 +1570,9 @@ const Assistant = {
     }
     try {
       // 复用全局 compressImage(file, maxSize, quality)
-      const blob = await compressImage(file, 800, 0.7);
+      // 压缩到 600px JPEG 0.5：单图 base64 约 25-35KB，整 URL（含 system prompt ~1.5KB base64）控制在 50KB 内
+      // 实测 DeepSeek-V4-Flash 在 600px 下对猫便便/皮肤/眼睛等关键识别完全够用
+      const blob = await compressImage(file, 600, 0.5);
       const dataUrl = await new Promise((res, rej) => {
         const r = new FileReader();
         r.onload = () => res(r.result);
@@ -1599,48 +1601,65 @@ const Assistant = {
   },
 
   /**
-   * 带图消息：用 XMLHttpRequest POST multipart 到 /api/vision
-   * - 不用 fetch：WebView Chromium 83 + Capacitor remote-loaded 模式下 fetch POST multipart 整个抛 "Failed to fetch"
-   * - XHR + multipart 在 WebView 83 实测可正常发 body
-   * - 不用 GET+base64：图片太大，URL 超 8KB 限制
+   * 带图消息：GET + ?d=base64(query) 到 /api/vision
+   * - 跟 chat 纯文本共用同一条 GET 通道，绕开 WebView 83 上所有 POST 路径都坏的 bug
+   * - 图片已在 onAttachImage 压缩到 600px JPEG 0.5（base64 ~25-35KB，URL <50KB）
    */
   async callVision(text, images) {
-    const form = new FormData();
-    form.append('model', this.VISION_MODEL);
-    form.append('system', this.visionSystemPrompt());
-    form.append('temp', '0.2');
-    form.append('max_tokens', '1000');
-    if (text) form.append('text', text);
-    for (const dataUrl of images) {
-      form.append('images', this._dataUrlToBlob(dataUrl), 'image.jpg');
+    // 构造 vision content 数组（base64 dataURL → OpenAI image_url 格式）
+    const content = [];
+    if (text) content.push({ type: 'text', text });
+    for (const url of images) {
+      content.push({ type: 'image_url', image_url: { url } });
     }
-    const url = 'https://xiaomiao-toh.pages.dev/api/vision';
+    const body = {
+      model: this.VISION_MODEL,
+      system: this.visionSystemPrompt(),
+      messages: [{ role: 'user', content }],
+      temperature: 0.2,
+      max_tokens: 1000,
+    };
+    const jsonBody = JSON.stringify(body);
+    const b64Body = btoa(unescape(encodeURIComponent(jsonBody)));
+    const url = 'https://xiaomiao-toh.pages.dev/api/vision?d=' + encodeURIComponent(b64Body);
 
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', url, true);
-      xhr.timeout = 25000;
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const data = JSON.parse(xhr.responseText);
-            const content = data.choices?.[0]?.message?.content;
-            if (!content) return reject(new Error('返回为空'));
-            resolve(content);
-          } catch (e) {
-            reject(new Error('返回解析失败'));
-          }
-        } else {
-          let detail = '';
-          try { detail = (JSON.parse(xhr.responseText).error?.message) || ''; } catch {}
-          reject(new Error(`API ${xhr.status}${detail ? ' · ' + detail : ''}`));
+    let lastErr;
+    for (let attempt = 0; attempt <= 2; attempt++) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 25000);
+      try {
+        const res = await fetch(url, { method: 'GET', signal: ctrl.signal });
+        clearTimeout(timer);
+        if (res.ok) {
+          const data = await res.json();
+          const reply = data.choices?.[0]?.message?.content;
+          if (!reply) throw new Error('返回为空');
+          return reply;
         }
-      };
-      xhr.onerror = () => reject(new Error('网络开了小差：XHR 网络错误'));
-      xhr.ontimeout = () => reject(new Error('请求超时（>25秒）'));
-      // 不要手动设 Content-Type — 浏览器/WebView 会自动加 boundary
-      xhr.send(form);
-    });
+        let errDetail = '';
+        try { errDetail = (await res.json()).error?.message || ''; } catch {}
+        lastErr = new Error(`API ${res.status}${errDetail ? ' · ' + errDetail : ''}`);
+        if (res.status >= 500 && attempt < 2) {
+          await new Promise(r => setTimeout(r, 800 * Math.pow(2, attempt)));
+          continue;
+        }
+        throw lastErr;
+      } catch (err) {
+        clearTimeout(timer);
+        lastErr = err;
+        const isNetworkish = err.name === 'AbortError' ||
+                             err.message.startsWith('Failed to fetch') ||
+                             err.message.includes('NetworkError');
+        if (attempt < 2 && isNetworkish) {
+          await new Promise(r => setTimeout(r, 800 * Math.pow(2, attempt)));
+          continue;
+        }
+        if (err.name === 'AbortError') throw new Error('请求超时（>25秒）');
+        if (err.message.startsWith('API') || err.message === '返回为空') throw err;
+        throw new Error(`网络开了小差：${err.message}`);
+      }
+    }
+    throw lastErr;
   },
 
   /**
@@ -3438,7 +3457,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 18;  // 与 www/version.json 同步（APK 包内的基线版本）
+const LOCAL_BUILD = 19;  // 与 www/version.json 同步（APK 包内的基线版本）
 const LS_DISMISSED_BUILD = 'xiaomiao.lastDismissedBuild';  // 用户上次"确认/关闭"的 build
 let remoteUpdateInfo = null;
 

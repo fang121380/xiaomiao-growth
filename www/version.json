@@ -1,8 +1,8 @@
 {
-  "build": 18,
-  "version": "v2.3.4",
+  "build": 19,
+  "version": "v2.3.5",
   "released": "2026-09-18",
-  "changelog": "🛠 修带图消息\"网络开了小差\"（vision 改用 XMLHttpRequest + multipart，绕过 WebView fetch POST 失败 bug）",
+  "changelog": "🛠 彻底修复带图消息（vision 走 GET + base64，跟 chat 共用同通道；图片压缩到 600px JPEG 0.5）",
   "force": false,
   "min_supported_build": 4
 }
