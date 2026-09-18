@@ -1,8 +1,8 @@
 {
-  "build": 25,
-  "version": "v2.3.11",
+  "build": 26,
+  "version": "v2.3.12",
   "released": "2026-09-18",
-  "changelog": "🐛 回退流式：WebView 83 与 SSE 不兼容导致 AI 完全挂掉；改用原非流式 JSON 路径；保留视觉模型打字动画",
+  "changelog": "🐛 视觉问答彻底修复：CF URL 长度上限导致大图发送失败，改用 XHR + multipart 上传，不再有 Failed to fetch",
   "force": false,
   "min_supported_build": 4
 }
