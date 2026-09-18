@@ -72,8 +72,29 @@ async function handle(context) {
         messages,
         temperature: 0.2,
         max_tokens: 700,
+        stream: parsed.stream === true,
       }),
     });
+
+    if (!upstream.ok) {
+      const text = await upstream.text();
+      return new Response(text, {
+        status: upstream.status,
+        headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+      });
+    }
+
+    // 流式：把 upstream.body 直接 pipe 给客户端（SSE 格式）
+    if (parsed.stream === true) {
+      return new Response(upstream.body, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          ...CORS_HEADERS,
+        },
+      });
+    }
 
     const text = await upstream.text();
     return new Response(text, {

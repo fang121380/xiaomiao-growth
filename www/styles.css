@@ -64,8 +64,8 @@
   --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
   /* 尺寸 */
-  --tabbar-h: 70px;
-  --topbar-h: 56px;
+  --tabbar-h: 54px;
+  --topbar-h: 50px;
   --safe-bottom: env(safe-area-inset-bottom, 0);
   --safe-top: env(safe-area-inset-top, 0);
 
@@ -222,15 +222,15 @@ body {
   border-bottom: 1px solid var(--border-soft);
 }
 .topbar-greet {
-  font-size: 13px; color: var(--text-soft);
+  font-size: 11px; color: var(--text-soft);
 }
 .topbar-greet b {
-  color: var(--text); font-weight: 700; font-size: 17px;
+  color: var(--text); font-weight: 700; font-size: 14px;
   margin-left: 2px;
 }
 .topbar-sub {
-  font-size: 11px; color: var(--text-muted);
-  margin-top: 2px;
+  font-size: 10px; color: var(--text-muted);
+  margin-top: 1px;
 }
 .topbar-sub b { color: var(--primary-deep); font-weight: 700; }
 .icon-btn {
@@ -692,9 +692,9 @@ body {
 .tab {
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  gap: 4px;
+  gap: 2px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
   transition: color 0.2s;
   position: relative;
@@ -1528,9 +1528,9 @@ body {
 .assistant-hero {
   background: linear-gradient(135deg, #FFE5C8 0%, #FFD8A8 100%);
   border-radius: var(--r-xl);
-  padding: 20px 18px;
-  margin: 8px 0 18px;
-  box-shadow: 0 8px 24px rgba(224, 123, 58, 0.18);
+  padding: 12px 14px;
+  margin: 6px 0 12px;
+  box-shadow: 0 6px 18px rgba(224, 123, 58, 0.16);
   position: relative;
   overflow: hidden;
 }
@@ -1542,34 +1542,34 @@ body {
   background: rgba(255, 255, 255, 0.4);
 }
 .assistant-hero::before {
-  width: 60px; height: 60px;
-  top: -10px; right: 30px;
+  width: 48px; height: 48px;
+  top: -8px; right: 24px;
 }
 .assistant-hero::after {
-  width: 30px; height: 30px;
-  bottom: -5px; right: 90px;
+  width: 24px; height: 24px;
+  bottom: -4px; right: 80px;
 }
 .assistant-hero-inner {
-  display: flex; align-items: center; gap: 14px;
+  display: flex; align-items: center; gap: 10px;
   position: relative; z-index: 1;
 }
 .assistant-avatar {
-  width: 56px; height: 56px;
-  border-radius: 18px;
+  width: 40px; height: 40px;
+  border-radius: 14px;
   background: linear-gradient(135deg, var(--primary) 0%, var(--primary-deep) 100%);
   color: #fff;
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 6px 18px rgba(224, 123, 58, 0.4);
+  box-shadow: 0 4px 12px rgba(224, 123, 58, 0.4);
 }
 .assistant-title {
-  font-size: 18px; font-weight: 800;
+  font-size: 15px; font-weight: 800;
   color: var(--text);
-  letter-spacing: -0.3px;
+  letter-spacing: -0.2px;
 }
 .assistant-sub {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-soft);
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
 .search-bar {
@@ -1770,14 +1770,15 @@ body {
   padding: 0 !important;
 }
 .chat-header {
-  padding: 12px 16px;
-  display: flex; align-items: center; gap: 12px;
+  padding: 8px 12px;
+  display: flex; align-items: center; gap: 10px;
   border-bottom: 1px solid var(--border-soft);
   background: var(--bg-card);
+  flex-shrink: 0;
 }
 .chat-header-back {
-  width: 36px; height: 36px;
-  border-radius: 12px;
+  width: 30px; height: 30px;
+  border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
   background: var(--primary-soft);
   color: var(--primary-deep);
@@ -1788,17 +1789,17 @@ body {
   flex: 1;
 }
 .chat-header-name {
-  font-size: 15px; font-weight: 700;
+  font-size: 13px; font-weight: 700;
   color: var(--text);
 }
 .chat-header-status {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--success);
-  margin-top: 2px;
-  display: flex; align-items: center; gap: 5px;
+  margin-top: 1px;
+  display: flex; align-items: center; gap: 4px;
 }
 .chat-status-dot {
-  width: 7px; height: 7px;
+  width: 6px; height: 6px;
   border-radius: 50%;
   background: var(--success);
   box-shadow: 0 0 0 2px rgba(95, 168, 44, 0.2);
@@ -2317,9 +2318,14 @@ body {
 /* 移动端聊天页面让出顶栏高度 */
 .page.active[data-page="assistant"].chat-mode {
   padding-top: 0 !important;
+  padding-bottom: 0 !important;
 }
 .chat-mode .topbar { display: none; }
 .chat-mode .tabbar { display: none; }
+/* chat 模式下 chat-page 拿满视口高度（顶栏/底栏已隐藏） */
+.chat-mode .chat-page {
+  height: calc(100vh - var(--safe-top) - var(--safe-bottom));
+}
 /* ====================================================================
  *  远程更新横幅（顶部滑入）
  * ==================================================================== */

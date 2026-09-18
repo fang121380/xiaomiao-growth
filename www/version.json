@@ -1,8 +1,8 @@
 {
-  "build": 22,
-  "version": "v2.3.8",
+  "build": 23,
+  "version": "v2.3.9",
   "released": "2026-09-18",
-  "changelog": "🖼️ 相册 / 文件支持多选（一次性选多张图片，不再一张张传）",
+  "changelog": "💬 AI 回复流式显示（一段一段出现，像豆包那样）；聊天页 chrome 瘦身（顶栏/AI 头部/底栏更紧凑）",
   "force": false,
   "min_supported_build": 4
 }

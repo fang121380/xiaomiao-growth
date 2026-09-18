@@ -3,7 +3,7 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.3.8';
+const APP_VERSION = 'v2.3.9';
 const APK_VERSION_CODE = 19;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
@@ -1773,7 +1773,7 @@ const Assistant = {
       });
       return;
     }
-    list.innerHTML = this.history.map(m => this.bubbleHTML(m)).join('');
+    list.innerHTML = this.history.map((m, i) => this.bubbleHTML(m, i)).join('');
     list.scrollTop = list.scrollHeight;
     // 事件委托：图片点击放大
     list.querySelectorAll('.chat-bubble-images img').forEach(img => {
@@ -1797,11 +1797,11 @@ const Assistant = {
     modal.querySelector('[data-close]').onclick = () => modal.classList.add('hidden');
   },
 
-  bubbleHTML(m) {
+  bubbleHTML(m, idx = -1) {
     if (m.content === '__TYPING__') {
       const isVision = m.isVision;
       return `
-        <div class="chat-bubble typing${isVision ? ' vision' : ''}">
+        <div class="chat-bubble typing${isVision ? ' vision' : ''}" data-stream-idx="${idx}">
           <div class="chat-bubble-ico">🐾</div>
           <div class="chat-bubble-text">
             ${isVision ? '<span class="chat-typing-label">正在分析图片…</span>' : ''}
@@ -1847,12 +1847,48 @@ const Assistant = {
     }
     // AI 消息：如果是视觉模型回复，附免责声明 + 视觉强调条
     const disclaimer = m.usedVision ? this.VISION_DISCLAIMER : '';
+    // 流式中且内容为空：显示 typing dots
+    const showTyping = m.streaming && !m.content;
     return `
-      <div class="chat-bubble${m.usedVision ? ' vision' : ''}">
+      <div class="chat-bubble${m.usedVision ? ' vision' : ''}${showTyping ? ' typing' : ''}" data-stream-idx="${idx}">
         <div class="chat-bubble-ico">🐾</div>
-        <div class="chat-bubble-text">${renderMarkdownLite(m.content)}${disclaimer ? `<div class="chat-disclaimer">${renderMarkdownLite(disclaimer)}</div>` : ''}</div>
+        <div class="chat-bubble-text">
+          ${m.isVision && showTyping ? '<span class="chat-typing-label">正在分析图片…</span>' : ''}
+          ${showTyping ? '<span class="chat-typing-dots"><span></span><span></span><span></span></span>' : ''}
+          ${renderMarkdownLite(m.content)}${disclaimer ? `<div class="chat-disclaimer">${renderMarkdownLite(disclaimer)}</div>` : ''}
+        </div>
       </div>
     `;
+  },
+
+  /**
+   * 流式更新单个 bubble 的内容（避免每次都重建整个列表）
+   * 找不到对应 bubble 时降级到全量 renderMessages
+   */
+  updateBubble(idx) {
+    const list = $('#chatList');
+    if (!list) return;
+    const m = this.history[idx];
+    if (!m) return;
+    const bubble = list.querySelector(`.chat-bubble[data-stream-idx="${idx}"]`);
+    if (!bubble) {
+      this.renderMessages();
+      return;
+    }
+    const isEmpty = !m.content;
+    const showTyping = m.streaming && isEmpty;
+    const showDisclaimer = m.usedVision && !m.streaming;
+    bubble.classList.toggle('typing', showTyping);
+    bubble.classList.toggle('vision', !!m.usedVision);
+    const textEl = bubble.querySelector('.chat-bubble-text');
+    if (!textEl) return;
+    const visionLabel = m.isVision && showTyping ? '<span class="chat-typing-label">正在分析图片…</span>' : '';
+    const dots = showTyping ? '<span class="chat-typing-dots"><span></span><span></span><span></span></span>' : '';
+    const disclaimer = showDisclaimer ? `<div class="chat-disclaimer">${renderMarkdownLite(this.VISION_DISCLAIMER)}</div>` : '';
+    textEl.innerHTML = visionLabel + dots + renderMarkdownLite(m.content) + disclaimer;
+    // 仅当用户当前已接近底部时自动滚动（避免打断翻看历史）
+    const nearBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 80;
+    if (nearBottom) list.scrollTop = list.scrollHeight;
   },
 
   async sendMessage() {
@@ -1885,23 +1921,36 @@ const Assistant = {
 
     this.history.push({ role: 'user', content: userContent });
     this.loading = true;
-    this.history.push({ role: 'assistant', content: '__TYPING__', isVision: usedVision });
+    // 文本走流式：直接 push 空 bubble 并设 streaming=true，每个 chunk 增量更新
+    // 视觉模型仍走非流式（multipart POST 路径不同）
+    const bubbleIdx = this.history.length;
+    this.history.push({ role: 'assistant', content: '', streaming: !usedVision, isVision: usedVision, usedVision });
     this.renderMessages();
 
     try {
-      // 带图走 /api/vision (multipart POST)，纯文本走 /api/deepseek (GET+base64)
-      const reply = usedVision
-        ? await this.callVision(text, images)
-        : await this.callDeepSeek(text, userContent);
-      this.history = this.history.filter(m => m.content !== '__TYPING__');
-      this.history.push({ role: 'assistant', content: reply, usedVision });
+      if (usedVision) {
+        const reply = await this.callVision(text, images);
+        this.history[bubbleIdx] = { role: 'assistant', content: reply, usedVision: true };
+      } else {
+        const isUrgent = this.detectUrgent(text);
+        await this.callDeepSeekStream(userContent, (delta) => {
+          this.history[bubbleIdx].content += delta;
+          this.updateBubble(bubbleIdx);
+        });
+        // 前置紧急横幅（前端保险）
+        const cur = this.history[bubbleIdx];
+        if (isUrgent && !cur.content.includes('急诊') && !cur.content.includes('立即就医')) {
+          cur.content = `${this.URGENT_BANNER}\n\n${cur.content}`;
+        }
+        cur.streaming = false;
+        this.updateBubble(bubbleIdx);
+      }
     } catch (e) {
-      this.history = this.history.filter(m => m.content !== '__TYPING__');
-      this.history.push({
+      this.history[bubbleIdx] = {
         role: 'assistant',
         content: `抱歉，暂时连不上 AI 医生 😿\n\n错误：${e.message}\n\n请检查网络后重试。\n知识库内容仍可正常浏览。`,
         usedVision: false,
-      });
+      };
     }
     this.loading = false;
     this.renderMessages();
@@ -1969,6 +2018,110 @@ const Assistant = {
       return `${this.URGENT_BANNER}\n\n${content}`;
     }
     return content;
+  },
+
+  /**
+   * 流式版文本问答：服务端 SSE，客户端逐 chunk 回调
+   * GET + ?d=base64(query) 同样绕过 WebView 83 POST body 丢失的 bug
+   */
+  async callDeepSeekStream(userContent, onDelta) {
+    const cleanHistory = this.history
+      .filter(m => !m.streaming)
+      .map(m => ({ role: m.role, content: m.content }));
+
+    const sysContent = this.textSystemPrompt();
+    const messages = [
+      { role: 'system', content: sysContent },
+      ...cleanHistory,
+    ];
+
+    await this.fetchStream({
+      url: 'https://xiaomiao-toh.pages.dev/api/deepseek',
+      body: {
+        model: this.TEXT_MODEL,
+        messages,
+        temperature: 0.2,
+        max_tokens: 700,
+        stream: true,
+      },
+      onDelta,
+      timeoutMs: 25000,
+      maxRetries: 2,
+      retryDelayMs: 800,
+    });
+  },
+
+  /**
+   * 流式 fetch：读 SSE chunk，每条 data: {...} 触发 onDelta
+   * - 与 fetchWithRetry 同样的 GET + base64 包装（绕开 WebView 83 POST bug）
+   * - 仅在网络错/超时重试；流已开始消费后不再重试
+   */
+  async fetchStream({ url, body, onDelta, timeoutMs = 25000, maxRetries = 1, retryDelayMs = 800 }) {
+    const jsonBody = JSON.stringify(body);
+    const b64Body = btoa(unescape(encodeURIComponent(jsonBody)));
+    const getUrl = url + (url.includes('?') ? '&' : '?') + 'd=' + encodeURIComponent(b64Body);
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      try {
+        const res = await fetch(getUrl, { method: 'GET', signal: ctrl.signal });
+        clearTimeout(timer);
+
+        if (!res.ok) {
+          const errText = await res.text().catch(() => '');
+          throw new Error(`API ${res.status}${errText ? ' · ' + errText.slice(0, 200) : ''}`);
+        }
+        if (!res.body || !res.body.getReader) {
+          throw new Error('当前浏览器不支持流式响应');
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          // SSE：每个事件以 \n\n 分隔
+          let sepIdx;
+          while ((sepIdx = buffer.indexOf('\n\n')) !== -1) {
+            const event = buffer.slice(0, sepIdx);
+            buffer = buffer.slice(sepIdx + 2);
+            for (const line of event.split('\n')) {
+              if (!line.startsWith('data:')) continue;
+              const data = line.slice(5).trim();
+              if (!data || data === '[DONE]') {
+                if (data === '[DONE]') return;
+                continue;
+              }
+              try {
+                const json = JSON.parse(data);
+                const delta = json.choices?.[0]?.delta?.content;
+                if (delta) onDelta(delta);
+              } catch (_) { /* 忽略单行解析错误 */ }
+            }
+          }
+        }
+        return;
+      } catch (err) {
+        clearTimeout(timer);
+        const isNetworkish = err.name === 'AbortError' ||
+                             err.message.startsWith('Failed to fetch') ||
+                             err.message.includes('NetworkError') ||
+                             err.message.includes('network');
+        if (attempt < maxRetries && isNetworkish) {
+          await new Promise(r => setTimeout(r, retryDelayMs * Math.pow(2, attempt)));
+          continue;
+        }
+        let friendly;
+        if (err.name === 'AbortError') friendly = `请求超时（>${Math.round(timeoutMs / 1000)}秒）`;
+        else if (err.message.startsWith('API')) friendly = err.message;
+        else friendly = `网络开了小差：${err.message}`;
+        throw new Error(friendly);
+      }
+    }
   },
 
   /** 文本问答 system prompt（纯文字场景） */
@@ -3511,7 +3664,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 22;  // 与 www/version.json 同步（APK 包内的基线版本）
+const LOCAL_BUILD = 23;  // 与 www/version.json 同步（APK 包内的基线版本）
 const LS_DISMISSED_BUILD = 'xiaomiao.lastDismissedBuild';  // 用户上次"确认/关闭"的 build
 let remoteUpdateInfo = null;
 
