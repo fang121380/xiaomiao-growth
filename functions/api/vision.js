@@ -40,33 +40,55 @@ async function handlePost(context) {
       return jsonError(500, '服务端未配置 DEEPSEEK_API_KEY 环境变量');
     }
 
-    const formData = await context.request.formData();
-    const model = (formData.get('model') || 'deepseek-v4-flash').toString();
-    const system = (formData.get('system') || '').toString();
-    const text = (formData.get('text') || '').toString();
-    const temperature = parseFloat(formData.get('temperature') || '0.2') || 0.2;
-    const maxTokens = parseInt(formData.get('max_tokens') || '1000', 10) || 1000;
-    const images = formData.getAll('image');
+    const contentType = (context.request.headers.get('content-type') || '').toLowerCase();
+    let model, system, text, temperature, maxTokens, imageContent;
 
-    if (images.length === 0) {
-      return jsonError(400, '缺少图片（multipart 字段 image）');
-    }
-
-    const imageContent = [];
-    for (const img of images) {
-      // img 是 File 对象（CF Workers / Pages Functions 兼容）
-      if (typeof img === 'string') continue;
-      const arrayBuffer = await img.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuffer);
-      // 二进制 → base64（避免 stack overflow，分块拼接）
-      let bin = '';
-      const chunk = 0x8000;
-      for (let i = 0; i < bytes.length; i += chunk) {
-        bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    if (contentType.includes('application/x-www-form-urlencoded')) {
+      // 主通道：XHR POST + form-urlencoded，绕开 WebView 83 multipart bug
+      const body = await context.request.text();
+      const params = new URLSearchParams(body);
+      model = (params.get('model') || 'deepseek-v4-flash').toString();
+      system = (params.get('system') || '').toString();
+      text = (params.get('text') || '').toString();
+      temperature = parseFloat(params.get('temperature') || '0.2') || 0.2;
+      maxTokens = parseInt(params.get('max_tokens') || '1000', 10) || 1000;
+      const imagesJson = params.get('images') || '[]';
+      let imageParts;
+      try { imageParts = JSON.parse(imagesJson); }
+      catch (_) { return jsonError(400, 'images 字段不是合法 JSON'); }
+      if (!Array.isArray(imageParts) || imageParts.length === 0) {
+        return jsonError(400, '缺少图片（images 字段）');
       }
-      const b64 = btoa(bin);
-      const mime = img.type || 'image/jpeg';
-      imageContent.push({ type: 'image_url', image_url: { url: `data:${mime};base64,${b64}` } });
+      imageContent = imageParts.map((p) => ({
+        type: 'image_url',
+        image_url: { url: `data:${p.mime || 'image/jpeg'};base64,${p.b64}` },
+      }));
+    } else {
+      // multipart 通道（备用，可能在某些 WebView 上失败）
+      const formData = await context.request.formData();
+      model = (formData.get('model') || 'deepseek-v4-flash').toString();
+      system = (formData.get('system') || '').toString();
+      text = (formData.get('text') || '').toString();
+      temperature = parseFloat(formData.get('temperature') || '0.2') || 0.2;
+      maxTokens = parseInt(formData.get('max_tokens') || '1000', 10) || 1000;
+      const images = formData.getAll('image');
+      if (images.length === 0) {
+        return jsonError(400, '缺少图片（multipart 字段 image）');
+      }
+      imageContent = [];
+      for (const img of images) {
+        if (typeof img === 'string') continue;
+        const arrayBuffer = await img.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuffer);
+        let bin = '';
+        const chunk = 0x8000;
+        for (let i = 0; i < bytes.length; i += chunk) {
+          bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+        }
+        const b64 = btoa(bin);
+        const mime = img.type || 'image/jpeg';
+        imageContent.push({ type: 'image_url', image_url: { url: `data:${mime};base64,${b64}` } });
+      }
     }
     if (text) imageContent.push({ type: 'text', text });
 
