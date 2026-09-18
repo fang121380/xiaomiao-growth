@@ -1650,60 +1650,83 @@ const Assistant = {
    * - 图片已在 onAttachImage 压缩到 600px JPEG 0.5（base64 ~25-35KB，URL <50KB）
    */
   async callVision(text, images) {
-    // 构造 vision content 数组（base64 dataURL → OpenAI image_url 格式）
-    const content = [];
-    if (text) content.push({ type: 'text', text });
+    // Android WebView 83 + GET+base64 通道的 CF URL 上限 ~50KB，
+    // 图片一大整个请求拿不到响应 → WebView 抛 Failed to fetch。
+    // 改用 XHR + multipart/form-data 上传（fetch POST multipart 在 WebView 83 上整个抛错）。
+    const model = this.VISION_MODEL;
+    const system = this.visionSystemPrompt();
+
+    // dataURL → Blob（FileReader 已在压缩时拿到 dataURL，这里反向解）
+    const blobs = [];
     for (const url of images) {
-      content.push({ type: 'image_url', image_url: { url } });
+      const blob = await this._dataUrlToBlob(url);
+      // 用 .jpg 后缀，部分服务端按扩展名识别类型
+      blobs.push(new File([blob], `image_${blobs.length}.jpg`, { type: 'image/jpeg' }));
     }
-    const body = {
-      model: this.VISION_MODEL,
-      system: this.visionSystemPrompt(),
-      messages: [{ role: 'user', content }],
-      temperature: 0.2,
-      max_tokens: 1000,
-    };
-    const jsonBody = JSON.stringify(body);
-    const b64Body = btoa(unescape(encodeURIComponent(jsonBody)));
-    const url = 'https://xiaomiao-toh.pages.dev/api/vision?d=' + encodeURIComponent(b64Body);
 
     let lastErr;
     for (let attempt = 0; attempt <= 2; attempt++) {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 25000);
       try {
-        const res = await fetch(url, { method: 'GET', signal: ctrl.signal });
-        clearTimeout(timer);
-        if (res.ok) {
-          const data = await res.json();
-          const reply = data.choices?.[0]?.message?.content;
-          if (!reply) throw new Error('返回为空');
-          return reply;
-        }
-        let errDetail = '';
-        try { errDetail = (await res.json()).error?.message || ''; } catch {}
-        lastErr = new Error(`API ${res.status}${errDetail ? ' · ' + errDetail : ''}`);
-        if (res.status >= 500 && attempt < 2) {
-          await new Promise(r => setTimeout(r, 800 * Math.pow(2, attempt)));
-          continue;
-        }
-        throw lastErr;
+        const reply = await this._xhrMultipart({
+          url: 'https://xiaomiao-toh.pages.dev/api/vision',
+          fields: { model, system, text: text || '', temperature: '0.2', max_tokens: '1000' },
+          files: blobs,
+          timeoutMs: 25000,
+        });
+        return reply;
       } catch (err) {
-        clearTimeout(timer);
         lastErr = err;
-        const isNetworkish = err.name === 'AbortError' ||
-                             err.message.startsWith('Failed to fetch') ||
-                             err.message.includes('NetworkError');
+        const isNetworkish = err.message.startsWith('Failed to fetch') ||
+                             err.message.includes('NetworkError') ||
+                             err.message.includes('请求超时');
         if (attempt < 2 && isNetworkish) {
           await new Promise(r => setTimeout(r, 800 * Math.pow(2, attempt)));
           continue;
         }
-        if (err.name === 'AbortError') throw new Error('请求超时（>25秒）');
-        if (err.message.startsWith('API') || err.message === '返回为空') throw err;
-        throw new Error(`网络开了小差：${err.message}`);
+        throw err;
       }
     }
     throw lastErr;
+  },
+
+  /**
+   * XMLHttpRequest + multipart/form-data 上传
+   * - 替代 fetch POST：WebView 83 上 fetch POST multipart 整个 fetch 抛 Failed to fetch
+   * - XHR multipart 在 WebView 83 上是好的
+   * - 返回 Promise，resolve 解析后的 JSON，reject 带友好错误
+   */
+  _xhrMultipart({ url, fields, files, timeoutMs = 25000 }) {
+    return new Promise((resolve, reject) => {
+      const form = new FormData();
+      for (const [k, v] of Object.entries(fields || {})) {
+        form.append(k, String(v));
+      }
+      for (const f of files || []) {
+        form.append('image', f, f.name || 'image.jpg');
+      }
+      const xhr = new XMLHttpRequest();
+      xhr.timeout = timeoutMs;
+      xhr.open('POST', url, true);
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            const reply = data.choices?.[0]?.message?.content;
+            if (!reply) reject(new Error('返回为空'));
+            else resolve(reply);
+          } catch (e) {
+            reject(new Error('响应解析失败: ' + e.message));
+          }
+        } else {
+          let errDetail = '';
+          try { errDetail = JSON.parse(xhr.responseText).error?.message || ''; } catch {}
+          reject(new Error(`API ${xhr.status}${errDetail ? ' · ' + errDetail : ''}`));
+        }
+      };
+      xhr.onerror = () => reject(new Error('网络开了小差：Failed to fetch'));
+      xhr.ontimeout = () => reject(new Error(`请求超时（>${Math.round(timeoutMs / 1000)}秒）`));
+      xhr.send(form);
+    });
   },
 
   /**
