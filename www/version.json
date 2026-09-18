@@ -1,8 +1,8 @@
 {
-  "build": 21,
-  "version": "v2.3.7",
+  "build": 22,
+  "version": "v2.3.8",
   "released": "2026-09-18",
-  "changelog": "💬 4 处体验优化：图片上传即刻显示（带旋转条）；用户纯图气泡去掉空白容器；AI 气泡更宽；段落间距统一",
+  "changelog": "🖼️ 相册 / 文件支持多选（一次性选多张图片，不再一张张传）",
   "force": false,
   "min_supported_build": 4
 }

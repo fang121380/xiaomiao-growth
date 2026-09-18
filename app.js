@@ -3,7 +3,7 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.3.7';
+const APP_VERSION = 'v2.3.8';
 const APK_VERSION_CODE = 19;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
@@ -1405,9 +1405,9 @@ const Assistant = {
     // 创建 3 个隐藏 file input（拍照 / 相册 / 文件）
     if (!this._inputs) {
       this._inputs = {
-        camera: this._makeHiddenInput('image/*', 'environment'),
-        gallery: this._makeHiddenInput('image/*'),
-        files:   this._makeHiddenInput('*/*'),
+        camera:  this._makeHiddenInput('image/*', 'environment', false),  // 拍照固定单张
+        gallery: this._makeHiddenInput('image/*', null,          true),   // 相册允许多选
+        files:   this._makeHiddenInput('*/*',    null,          true),   // 文件允许多选
       };
     }
     this.bindChatEvents();
@@ -1419,12 +1419,14 @@ const Assistant = {
    * 创建一个隐藏的 <input type="file">，挂到 body，change 触发 onAttachImage
    * @param {string} accept MIME 类型
    * @param {string|null} capture 'environment'/'user'/null（null → 文件选择器）
+   * @param {boolean} multiple 是否允许多选（拍照固定单张）
    */
-  _makeHiddenInput(accept, capture) {
+  _makeHiddenInput(accept, capture, multiple = false) {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = accept;
     if (capture) input.capture = capture;
+    if (multiple) input.multiple = true;
     input.style.display = 'none';
     input.addEventListener('change', e => this.onAttachImage(e));
     document.body.appendChild(input);
@@ -1457,14 +1459,14 @@ const Assistant = {
           <span class="chat-attach-emoji">🖼️</span>
           <span class="chat-attach-option-text">
             <strong>相册</strong>
-            <span>从相册选图片</span>
+            <span>从相册多选图片</span>
           </span>
         </button>
         <button class="chat-attach-option" data-src="files">
           <span class="chat-attach-emoji">📎</span>
           <span class="chat-attach-option-text">
             <strong>文件</strong>
-            <span>PDF / 文档（暂仅支持图片）</span>
+            <span>多选文件（暂仅支持图片）</span>
           </span>
         </button>
       </div>
@@ -1561,59 +1563,73 @@ const Assistant = {
    */
   async onAttachImage(e) {
     const input = e.target;
-    const file = input.files?.[0];
-    // 不管结果如何，先清 value（下次可重选同一文件）
+    const files = Array.from(input.files || []);
+    // 不管结果如何，先清 value（下次可重选同一文件，包括多选）
     setTimeout(() => { input.value = ''; }, 100);
-    if (!file) return;
-    // 类型判定
-    if (!file.type.startsWith('image/')) {
-      showToast(`暂只支持图片（你选的是 ${file.name || "文件"}）`, 2200);
-      return;
+    if (files.length === 0) return;
+
+    // 筛选图片（type 判定）
+    const images = files.filter(f => f.type.startsWith('image/'));
+    const rejected = files.length - images.length;
+    if (rejected > 0) {
+      const names = files.filter(f => !f.type.startsWith('image/')).map(f => f.name || '文件').slice(0, 2).join('、');
+      showToast(`已忽略 ${rejected} 个非图片${rejected > 1 ? '' : ''}（${names}${rejected > 2 ? '…' : ''}）`, 2200);
+      if (images.length === 0) return;
     }
-    if (this.pendingImages.length >= 4) {
+    // 上限 4 张
+    const remaining = 4 - this.pendingImages.length;
+    if (remaining <= 0) {
       showToast('最多 4 张图', 1800);
       return;
     }
-    // Step 1：立刻用 FileReader 读原图 dataURL 先显示出来（< 50ms）
-    // 同时给缩略图加 .loading 灰色遮罩，等压缩完成再移除
-    const quickDataUrl = await new Promise((res, rej) => {
+    if (images.length > remaining) {
+      showToast(`本次选了 ${images.length} 张，只保留前 ${remaining} 张（最多 4 张）`, 2200);
+    }
+    const toProcess = images.slice(0, remaining);
+
+    // Step 1：批量立刻读原图 dataURL 先显示（< 100ms）
+    const quickDataUrls = await Promise.all(toProcess.map(file => new Promise((res, rej) => {
       const r = new FileReader();
       r.onload = () => res(r.result);
       r.onerror = rej;
       r.readAsDataURL(file);
-    });
-    const idx = this.pendingImages.length;
-    this.pendingImages.push(quickDataUrl);
+    })));
+    const startIdx = this.pendingImages.length;
+    this.pendingImages.push(...quickDataUrls);
     this.renderPendingImages();
     // 给刚 push 的缩略图加 loading 类
     requestAnimationFrame(() => {
-      const thumb = document.querySelector(`.chat-pending-thumb[data-idx="${idx}"]`);
-      if (thumb) thumb.classList.add('loading');
+      for (let i = 0; i < toProcess.length; i++) {
+        const thumb = document.querySelector(`.chat-pending-thumb[data-idx="${startIdx + i}"]`);
+        if (thumb) thumb.classList.add('loading');
+      }
     });
     this.updateSendBtn();
 
-    // Step 2：后台异步压缩到 600px JPEG 0.5（500-2000ms），完成后替换 dataURL
-    try {
-      const blob = await compressImage(file, 600, 0.5);
-      const compressedDataUrl = await new Promise((res, rej) => {
-        const r = new FileReader();
-        r.onload = () => res(r.result);
-        r.onerror = rej;
-        r.readAsDataURL(blob);
-      });
-      this.pendingImages[idx] = compressedDataUrl;
-      this.renderPendingImages();
-      // 移除 loading 类
-      requestAnimationFrame(() => {
-        const thumb = document.querySelector(`.chat-pending-thumb[data-idx="${idx}"]`);
+    // Step 2：后台批量异步压缩到 600px JPEG 0.5
+    toProcess.forEach(async (file, i) => {
+      try {
+        const blob = await compressImage(file, 600, 0.5);
+        const compressedDataUrl = await new Promise((res, rej) => {
+          const r = new FileReader();
+          r.onload = () => res(r.result);
+          r.onerror = rej;
+          r.readAsDataURL(blob);
+        });
+        this.pendingImages[startIdx + i] = compressedDataUrl;
+        this.renderPendingImages();
+        // 移除该缩略图的 loading 类
+        requestAnimationFrame(() => {
+          const thumb = document.querySelector(`.chat-pending-thumb[data-idx="${startIdx + i}"]`);
+          if (thumb) thumb.classList.remove('loading');
+        });
+      } catch (err) {
+        console.error('图片压缩失败', err);
+        // 失败时保留原图（不阻塞用户发送）
+        const thumb = document.querySelector(`.chat-pending-thumb[data-idx="${startIdx + i}"]`);
         if (thumb) thumb.classList.remove('loading');
-      });
-    } catch (err) {
-      console.error('图片压缩失败', err);
-      // 失败时保留原图（不阻塞用户发送）
-      const thumb = document.querySelector(`.chat-pending-thumb[data-idx="${idx}"]`);
-      if (thumb) thumb.classList.remove('loading');
-    }
+      }
+    });
   },
 
   /**
@@ -3495,7 +3511,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 21;  // 与 www/version.json 同步（APK 包内的基线版本）
+const LOCAL_BUILD = 22;  // 与 www/version.json 同步（APK 包内的基线版本）
 const LS_DISMISSED_BUILD = 'xiaomiao.lastDismissedBuild';  // 用户上次"确认/关闭"的 build
 let remoteUpdateInfo = null;
 
