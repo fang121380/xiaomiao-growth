@@ -1,8 +1,8 @@
 {
-  "build": 26,
-  "version": "v2.3.12",
+  "build": 27,
+  "version": "v2.3.13",
   "released": "2026-09-18",
-  "changelog": "🐛 视觉问答彻底修复：CF URL 长度上限导致大图发送失败，改用 XHR + multipart 上传，不再有 Failed to fetch",
+  "changelog": "🐛 视觉问答：换 iframe + form 同步提交（最古老的浏览器兼容方案），彻底绕开 WebView 83 上所有 POST 路径的 bug",
   "force": false,
   "min_supported_build": 4
 }

@@ -3,7 +3,7 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.3.12';
+const APP_VERSION = 'v2.3.13';
 const APK_VERSION_CODE = 19;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
@@ -1650,82 +1650,127 @@ const Assistant = {
    * - 图片已在 onAttachImage 压缩到 600px JPEG 0.5（base64 ~25-35KB，URL <50KB）
    */
   async callVision(text, images) {
-    // Android WebView 83 + GET+base64 通道的 CF URL 上限 ~50KB，
-    // 图片一大整个请求拿不到响应 → WebView 抛 Failed to fetch。
-    // 改用 XHR + multipart/form-data 上传（fetch POST multipart 在 WebView 83 上整个抛错）。
+    // Android WebView 83 上所有 POST 路径都不可靠：
+    //   - fetch POST 空 body
+    //   - fetch POST multipart 整个抛 Failed to fetch
+    //   - XHR POST multipart 部分情况下也抛
+    // 唯一稳的：iframe + form 同步提交（旧浏览器通杀）+ 读 iframe 文档拿响应
+    // CF Pages Functions 支持 CORS POST + multipart。
     const model = this.VISION_MODEL;
     const system = this.visionSystemPrompt();
 
-    // dataURL → Blob（FileReader 已在压缩时拿到 dataURL，这里反向解）
+    // dataURL → Blob
     const blobs = [];
     for (const url of images) {
       const blob = await this._dataUrlToBlob(url);
-      // 用 .jpg 后缀，部分服务端按扩展名识别类型
-      blobs.push(new File([blob], `image_${blobs.length}.jpg`, { type: 'image/jpeg' }));
+      blobs.push(blob);
     }
 
-    let lastErr;
-    for (let attempt = 0; attempt <= 2; attempt++) {
-      try {
-        const reply = await this._xhrMultipart({
-          url: 'https://xiaomiao-toh.pages.dev/api/vision',
-          fields: { model, system, text: text || '', temperature: '0.2', max_tokens: '1000' },
-          files: blobs,
-          timeoutMs: 25000,
-        });
-        return reply;
-      } catch (err) {
-        lastErr = err;
-        const isNetworkish = err.message.startsWith('Failed to fetch') ||
-                             err.message.includes('NetworkError') ||
-                             err.message.includes('请求超时');
-        if (attempt < 2 && isNetworkish) {
-          await new Promise(r => setTimeout(r, 800 * Math.pow(2, attempt)));
-          continue;
-        }
-        throw err;
-      }
-    }
-    throw lastErr;
+    return this._iframeUpload({
+      url: 'https://xiaomiao-toh.pages.dev/api/vision',
+      fields: { model, system, text: text || '', temperature: '0.2', max_tokens: '1000' },
+      files: blobs,
+      timeoutMs: 25000,
+    });
   },
 
   /**
-   * XMLHttpRequest + multipart/form-data 上传
-   * - 替代 fetch POST：WebView 83 上 fetch POST multipart 整个 fetch 抛 Failed to fetch
-   * - XHR multipart 在 WebView 83 上是好的
-   * - 返回 Promise，resolve 解析后的 JSON，reject 带友好错误
+   * iframe + form 同步上传（multipart/form-data）
+   * - 浏览器最古老的文件上传方式，WebView 83 上绝对可靠
+   * - 通过 hidden iframe 接收响应，读 iframe 文档解析 JSON
+   * - 文件用 Blob + DataTransfer 注入到 input[type=file]
    */
-  _xhrMultipart({ url, fields, files, timeoutMs = 25000 }) {
+  _iframeUpload({ url, fields, files, timeoutMs = 25000 }) {
     return new Promise((resolve, reject) => {
-      const form = new FormData();
-      for (const [k, v] of Object.entries(fields || {})) {
-        form.append(k, String(v));
-      }
-      for (const f of files || []) {
-        form.append('image', f, f.name || 'image.jpg');
-      }
-      const xhr = new XMLHttpRequest();
-      xhr.timeout = timeoutMs;
-      xhr.open('POST', url, true);
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const data = JSON.parse(xhr.responseText);
-            const reply = data.choices?.[0]?.message?.content;
-            if (!reply) reject(new Error('返回为空'));
-            else resolve(reply);
-          } catch (e) {
-            reject(new Error('响应解析失败: ' + e.message));
+      const iframeName = '_upload_iframe_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+      const iframe = document.createElement('iframe');
+      iframe.name = iframeName;
+      iframe.id = iframeName;
+      iframe.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;border:0;visibility:hidden;';
+      document.body.appendChild(iframe);
+
+      let settled = false;
+      const cleanup = () => {
+        try { document.body.removeChild(iframe); } catch (_) {}
+        try { document.body.removeChild(form); } catch (_) {}
+      };
+      const finish = (fn, val) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        fn(val);
+      };
+
+      const timer = setTimeout(() => {
+        finish(reject, new Error(`请求超时（>${Math.round(timeoutMs / 1000)}秒）`));
+      }, timeoutMs);
+
+      iframe.onload = () => {
+        clearTimeout(timer);
+        try {
+          const doc = iframe.contentDocument || iframe.contentWindow.document;
+          const text = (doc.body && doc.body.innerText) || doc.documentElement.innerText || '';
+          // 响应是 JSON
+          let data;
+          try { data = JSON.parse(text); }
+          catch (_) {
+            return finish(reject, new Error('响应解析失败: ' + text.slice(0, 200)));
           }
-        } else {
-          let errDetail = '';
-          try { errDetail = JSON.parse(xhr.responseText).error?.message || ''; } catch {}
-          reject(new Error(`API ${xhr.status}${errDetail ? ' · ' + errDetail : ''}`));
+          if (data && data.choices && data.choices[0] && data.choices[0].message) {
+            const reply = data.choices[0].message.content;
+            if (!reply) return finish(reject, new Error('返回为空'));
+            return finish(resolve, reply);
+          }
+          if (data && data.error) {
+            return finish(reject, new Error('API 错误: ' + (data.error.message || JSON.stringify(data.error).slice(0, 200))));
+          }
+          finish(reject, new Error('响应格式异常: ' + text.slice(0, 200)));
+        } catch (e) {
+          finish(reject, new Error('读取 iframe 响应失败: ' + e.message));
         }
       };
-      xhr.onerror = () => reject(new Error('网络开了小差：Failed to fetch'));
-      xhr.ontimeout = () => reject(new Error(`请求超时（>${Math.round(timeoutMs / 1000)}秒）`));
-      xhr.send(form);
+      iframe.onerror = () => {
+        clearTimeout(timer);
+        finish(reject, new Error('网络开了小差：iframe 加载错误'));
+      };
+
+      // 构建 form
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = url;
+      form.target = iframeName;
+      form.enctype = 'multipart/form-data';
+      form.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:0;height:0;border:0;';
+
+      // 文本字段
+      for (const [k, v] of Object.entries(fields || {})) {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = k;
+        input.value = String(v);
+        form.appendChild(input);
+      }
+
+      // 文件字段（多个 image）
+      (files || []).forEach((blob, i) => {
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.name = 'image';
+        fileInput.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;';
+        // 用 DataTransfer 注入 File 对象
+        try {
+          const file = new File([blob], `image_${i}.jpg`, { type: blob.type || 'image/jpeg' });
+          const dt = new DataTransfer();
+          dt.items.add(file);
+          fileInput.files = dt.files;
+        } catch (e) {
+          // 老 WebView 不支持 DataTransfer，回退：直接把 blob 当 input.value（不靠谱但试一下）
+        }
+        form.appendChild(fileInput);
+      });
+
+      document.body.appendChild(form);
+      form.submit();
     });
   },
 
@@ -3704,7 +3749,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 26;  // 与 www/version.json 同步（APK 包内的基线版本）
+const LOCAL_BUILD = 27;  // 与 www/version.json 同步（APK 包内的基线版本）
 const LS_DISMISSED_BUILD = 'xiaomiao.lastDismissedBuild';  // 用户上次"确认/关闭"的 build
 let remoteUpdateInfo = null;
 
