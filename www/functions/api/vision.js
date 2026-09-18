@@ -23,6 +23,8 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Expose-Headers': 'Content-Type',
+  'Access-Control-Max-Age': '86400',
 };
 
 export async function onRequestPost(context) {
@@ -43,7 +45,30 @@ async function handlePost(context) {
     const contentType = (context.request.headers.get('content-type') || '').toLowerCase();
     let model, system, text, temperature, maxTokens, imageContent;
 
-    if (contentType.includes('application/x-www-form-urlencoded')) {
+    // 主通道：raw bytes body（Content-Type: image/jpeg 或 image/png）
+    // WebView 83 上 JSON body 空、multipart 抛错，但 raw bytes body 没在已知 bug 名单
+    if (contentType.includes('image/')) {
+      const url = new URL(context.request.url);
+      model = (url.searchParams.get('model') || 'deepseek-v4-flash');
+      try { system = decodeURIComponent(url.searchParams.get('system') || ''); } catch (_) { system = ''; }
+      try { text = decodeURIComponent(url.searchParams.get('text') || ''); } catch (_) { text = ''; }
+      temperature = parseFloat(url.searchParams.get('temperature') || '0.2') || 0.2;
+      maxTokens = parseInt(url.searchParams.get('max_tokens') || '1000', 10) || 1000;
+      const mime = contentType.includes('png') ? 'image/png' : 'image/jpeg';
+
+      const arrayBuffer = await context.request.arrayBuffer();
+      if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+        return jsonError(400, 'body 为空');
+      }
+      const bytes = new Uint8Array(arrayBuffer);
+      let bin = '';
+      const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+      }
+      const b64 = btoa(bin);
+      imageContent = [{ type: 'image_url', image_url: { url: `data:${mime};base64,${b64}` } }];
+    } else if (contentType.includes('application/x-www-form-urlencoded')) {
       // 主通道：XHR POST + form-urlencoded，绕开 WebView 83 multipart bug
       const body = await context.request.text();
       const params = new URLSearchParams(body);
@@ -180,6 +205,14 @@ async function handleGet(context) {
 export async function onRequestOptions() {
   return new Response(null, { status: 204, headers: CORS_HEADERS });
 }
+
+/**
+ * 新通道：POST + body 是原始图片字节
+ * - URL params: model, system (URL-encoded), text, temperature, max_tokens
+ * - body: 原始图片字节（image/jpeg 或 image/png）
+ * - WebView 83 上 fetch POST JSON body 空、multipart 抛错；
+ *   raw bytes body 没在已知 bug 名单里，可能是唯一能用的 POST 形式
+ */
 
 function jsonError(status, message) {
   return new Response(JSON.stringify({ error: { message } }), {

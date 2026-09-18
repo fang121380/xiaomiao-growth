@@ -1,8 +1,8 @@
 {
-  "build": 31,
-  "version": "v2.3.17",
+  "build": 32,
+  "version": "v2.3.18",
   "released": "2026-09-18",
-  "changelog": "🐛 视觉问答：图片狠压到 300x300 JPEG 0.2 + 紧凑 base64 编码，URL 几乎必 <25KB；加 URL 长度预检",
+  "changelog": "🐛 视觉问答：fetch POST + raw bytes body（图片原始字节，Content-Type: image/jpeg），body 无大小限制，可发完整画质图",
   "force": false,
   "min_supported_build": 4
 }
