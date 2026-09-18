@@ -1925,8 +1925,8 @@ body {
   display: flex; gap: 8px; align-items: flex-end;
 }
 
-/* ============ 识图：附件按钮 ============ */
-.chat-attach-btn {
+/* ============ 识图：+ 按钮（入口） ============ */
+.chat-plus-btn {
   width: 42px; height: 42px;
   border-radius: 14px;
   background: var(--bg);
@@ -1935,18 +1935,22 @@ body {
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
   transition: all 0.2s var(--spring);
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
   position: relative;
 }
-.chat-attach-btn:hover { color: var(--primary); border-color: var(--primary-light); }
-.chat-attach-btn:active { transform: scale(0.92); background: var(--primary-soft); color: var(--primary); }
-/* 有图时变激活态 */
-.chat-attach-btn.has-image {
+.chat-plus-btn:hover { color: var(--primary); border-color: var(--primary-light); }
+.chat-plus-btn:active { transform: scale(0.92); background: var(--primary-soft); color: var(--primary); }
+.chat-plus-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* 有图时变激活态（沿用旧 attach-btn 视觉） */
+.chat-plus-btn.has-image {
   background: var(--primary);
   border-color: var(--primary);
   color: #fff;
   box-shadow: 0 2px 8px rgba(245, 168, 107, 0.4);
 }
-.chat-attach-btn.has-image::after {
+.chat-plus-btn.has-image::after {
   content: attr(data-count);
   position: absolute;
   top: -4px; right: -4px;
@@ -1964,6 +1968,118 @@ body {
 @keyframes badgeIn {
   from { transform: scale(0); }
   to { transform: scale(1); }
+}
+
+/* ============ 识图：附件选择 ActionSheet ============ */
+.chat-attach-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+.chat-attach-sheet.is-open { pointer-events: auto; }
+.chat-attach-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0);
+  transition: background 0.28s ease;
+}
+.chat-attach-sheet.is-open .chat-attach-backdrop {
+  background: rgba(0, 0, 0, 0.5);
+}
+.chat-attach-card {
+  position: relative;
+  margin: 0 12px 8px;
+  background: var(--bg-elevated, #fff);
+  border-radius: 20px;
+  overflow: hidden;
+  transform: translateY(100%);
+  transition: transform 0.32s cubic-bezier(0.32, 1.15, 0.45, 1);
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.08);
+}
+.chat-attach-sheet.is-open .chat-attach-card {
+  transform: translateY(0);
+}
+.chat-attach-title {
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-soft, #999);
+  padding: 14px 0 10px;
+  letter-spacing: 0.5px;
+  font-weight: 500;
+}
+.chat-attach-option {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 20px;
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--border-soft, rgba(0,0,0,0.05));
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s ease;
+  font-family: inherit;
+}
+.chat-attach-option:active { background: var(--bg, rgba(0,0,0,0.03)); }
+.chat-attach-option:first-of-type { border-top: none; }
+.chat-attach-emoji {
+  width: 48px; height: 48px;
+  flex-shrink: 0;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #FFF1E6 0%, #FFE2CC 100%);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px;
+  line-height: 1;
+}
+.chat-attach-option-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.chat-attach-option-text strong {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text, #222);
+}
+.chat-attach-option-text span {
+  font-size: 12px;
+  color: var(--text-soft, #999);
+}
+.chat-attach-cancel {
+  display: block;
+  width: calc(100% - 24px);
+  margin: 8px 12px calc(16px + env(safe-area-inset-bottom));
+  padding: 16px;
+  background: var(--bg-elevated, #fff);
+  border: none;
+  border-radius: 20px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text, #222);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s ease;
+  font-family: inherit;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.08);
+  transform: translateY(100%);
+  transition: transform 0.32s cubic-bezier(0.32, 1.15, 0.45, 1) 0.04s;
+}
+.chat-attach-sheet.is-open .chat-attach-cancel {
+  transform: translateY(0);
+}
+.chat-attach-cancel:active { background: var(--bg, rgba(0,0,0,0.04)); }
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-attach-card,
+  .chat-attach-cancel { transition-duration: 0.01s; }
 }
 
 /* ============ 识图：待发送预览条 ============ */

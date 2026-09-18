@@ -3,8 +3,8 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.3.1';
-const APK_VERSION_CODE = 18;  // 与 android/app/build.gradle 的 versionCode 同步
+const APP_VERSION = 'v2.3.2';
+const APK_VERSION_CODE = 19;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
 const LS_LAST_SEEN_VERSION  = 'xiaomiao.lastSeenVersion';     // e.g. 'v2.2.7'
@@ -1382,34 +1382,113 @@ const Assistant = {
         <div class="chat-list" id="chatList"></div>
         <div class="chat-pending-images" id="chatPendingImages" hidden></div>
         <div class="chat-input-bar">
-          <button class="chat-attach-btn" id="chatAttach" aria-label="发送图片">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-              <circle cx="12" cy="13" r="4"/>
-            </svg>
-          </button>
           <textarea class="chat-input" id="chatInput" rows="1" placeholder="描述小猫的情况…" maxlength="500"></textarea>
           <button class="chat-send" id="chatSend" aria-label="发送">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
             </svg>
           </button>
+          <button class="chat-plus-btn" id="chatPlus" aria-label="添加附件（拍照/相册/文件）">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+          </button>
         </div>
       </div>
     `;
-    // 创建隐藏 file input（每次复用同一个）
-    if (!this._attachInput) {
-      this._attachInput = document.createElement('input');
-      this._attachInput.type = 'file';
-      this._attachInput.accept = 'image/*';
-      this._attachInput.capture = 'environment';
-      this._attachInput.style.display = 'none';
-      document.body.appendChild(this._attachInput);
-      this._attachInput.addEventListener('change', e => this.onAttachImage(e));
+    // 创建 3 个隐藏 file input（拍照 / 相册 / 文件）
+    if (!this._inputs) {
+      this._inputs = {
+        camera: this._makeHiddenInput('image/*', 'environment'),
+        gallery: this._makeHiddenInput('image/*'),
+        files:   this._makeHiddenInput('*/*'),
+      };
     }
     this.bindChatEvents();
     this.renderMessages();
     this.renderPendingImages();
+  },
+
+  /**
+   * 创建一个隐藏的 <input type="file">，挂到 body，change 触发 onAttachImage
+   * @param {string} accept MIME 类型
+   * @param {string|null} capture 'environment'/'user'/null（null → 文件选择器）
+   */
+  _makeHiddenInput(accept, capture) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = accept;
+    if (capture) input.capture = capture;
+    input.style.display = 'none';
+    input.addEventListener('change', e => this.onAttachImage(e));
+    document.body.appendChild(input);
+    return input;
+  },
+
+  /**
+   * 打开附件选择 ActionSheet（从底部滑入）
+   * - 拍照 / 相册 / 文件 三选项
+   * - 选项背后复用 3 个隐藏 input
+   */
+  openAttachSheet() {
+    // 防重入
+    if (document.querySelector('.chat-attach-sheet')) return;
+
+    const sheet = document.createElement('div');
+    sheet.className = 'chat-attach-sheet';
+    sheet.innerHTML = `
+      <div class="chat-attach-backdrop"></div>
+      <div class="chat-attach-card">
+        <div class="chat-attach-title">添加附件</div>
+        <button class="chat-attach-option" data-src="camera">
+          <span class="chat-attach-emoji">📷</span>
+          <span class="chat-attach-option-text">
+            <strong>拍照</strong>
+            <span>即拍即传</span>
+          </span>
+        </button>
+        <button class="chat-attach-option" data-src="gallery">
+          <span class="chat-attach-emoji">🖼️</span>
+          <span class="chat-attach-option-text">
+            <strong>相册</strong>
+            <span>从相册选图片</span>
+          </span>
+        </button>
+        <button class="chat-attach-option" data-src="files">
+          <span class="chat-attach-emoji">📎</span>
+          <span class="chat-attach-option-text">
+            <strong>文件</strong>
+            <span>PDF / 文档（暂仅支持图片）</span>
+          </span>
+        </button>
+      </div>
+      <button class="chat-attach-cancel">取消</button>
+    `;
+    document.body.appendChild(sheet);
+
+    // 强制 reflow → 触发 CSS transition
+    sheet.offsetHeight;
+    sheet.classList.add('is-open');
+
+    const close = () => {
+      sheet.classList.remove('is-open');
+      setTimeout(() => sheet.remove(), 320);
+    };
+
+    sheet.querySelector('.chat-attach-backdrop').onclick = close;
+    sheet.querySelector('.chat-attach-cancel').onclick = close;
+
+    sheet.querySelectorAll('.chat-attach-option').forEach(btn => {
+      btn.onclick = () => {
+        const src = btn.dataset.src;
+        close();
+        // 等 sheet 关闭动画再触发（避免双层 dialog 视觉冲突）
+        setTimeout(() => {
+          const input = this._inputs?.[src];
+          if (input) input.click();
+        }, 320);
+      };
+    });
   },
 
   bindHomeEvents() {
@@ -1431,10 +1510,9 @@ const Assistant = {
       this.renderPendingImages();
     };
     $('#chatSend').onclick = () => this.sendMessage();
-    $('#chatAttach').onclick = () => {
+    $('#chatPlus').onclick = () => {
       if (this.loading) return;
-      this._attachInput.value = ''; // 关键：允许重选同一张图
-      this._attachInput.click();
+      this.openAttachSheet();
     };
     const input = $('#chatInput');
     input.onkeydown = (e) => {
@@ -1457,28 +1535,35 @@ const Assistant = {
     if (!btn) return;
     const hasText = $('#chatInput').value.trim().length > 0;
     btn.disabled = !hasText && this.pendingImages.length === 0;
-    // attach 按钮激活态 + 角标计数
-    const attach = $('#chatAttach');
-    if (attach) {
+    // + 按钮激活态（有待发图片时高亮 + 角标计数）
+    const plus = $('#chatPlus');
+    if (plus) {
       if (this.pendingImages.length > 0) {
-        attach.classList.add('has-image');
-        attach.setAttribute('data-count', this.pendingImages.length);
+        plus.classList.add('has-image');
+        plus.setAttribute('data-count', this.pendingImages.length);
       } else {
-        attach.classList.remove('has-image');
-        attach.removeAttribute('data-count');
+        plus.classList.remove('has-image');
+        plus.removeAttribute('data-count');
       }
     }
   },
 
   /**
-   * 处理图片选择（attachInput change 回调）
-   * - 压缩到 800px / JPEG 0.7
-   * - 转 base64 data URL
-   * - 压入 pendingImages + 渲染预览
+   * 处理文件选择（3 个 attach input 共享的 change 回调）
+   * - 图片：压缩到 800px / JPEG 0.7 → 进 pendingImages
+   * - 非图片（PDF/文档）：暂不支持，toast 提示
    */
   async onAttachImage(e) {
-    const file = e.target.files?.[0];
+    const input = e.target;
+    const file = input.files?.[0];
+    // 不管结果如何，先清 value（下次可重选同一文件）
+    setTimeout(() => { input.value = ''; }, 100);
     if (!file) return;
+    // 类型判定
+    if (!file.type.startsWith('image/')) {
+      showToast(`暂只支持图片（你选的是 ${file.name || "文件"}）`, 2200);
+      return;
+    }
     if (this.pendingImages.length >= 4) {
       showToast('最多 4 张图', 1800);
       return;
@@ -3293,7 +3378,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 15;  // 与 www/version.json 同步（APK 包内的基线版本）
+const LOCAL_BUILD = 16;  // 与 www/version.json 同步（APK 包内的基线版本）
 const LS_DISMISSED_BUILD = 'xiaomiao.lastDismissedBuild';  // 用户上次"确认/关闭"的 build
 let remoteUpdateInfo = null;
 
