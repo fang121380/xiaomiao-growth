@@ -3,7 +3,7 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.3.18';
+const APP_VERSION = 'v2.3.19';
 const APK_VERSION_CODE = 19;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
@@ -1610,7 +1610,7 @@ const Assistant = {
     // 现在走 XHR POST form-urlencoded 不再受 CF URL 长度限制，可以恢复原画质
     toProcess.forEach(async (file, i) => {
       try {
-        const blob = await compressImage(file, 600, 0.5);
+        const blob = await compressImage(file, 300, 0.2);
         const compressedDataUrl = await new Promise((res, rej) => {
           const r = new FileReader();
           r.onload = () => res(r.result);
@@ -1651,44 +1651,38 @@ const Assistant = {
    * - 图片已在 onAttachImage 压缩到 400px JPEG 0.3（base64 ~5-15KB，URL <50KB）
    */
   async callVision(text, images) {
-    // WebView 83 实测踩坑总结：
-    //   - fetch POST JSON：body 被丢（空）
-    //   - fetch POST multipart：整个 fetch 抛 Failed to fetch
-    //   - XHR POST multipart：抛错
-    //   - GET+base64：CF URL 上限 50KB，大图挂
-    //   - ✅ fetch POST + raw bytes（Content-Type: image/jpeg，body = 压缩后的 Blob）：
-    //     不在已知 bug 名单，body 没大小限制（不像 GET URL），可发完整画质图。
-    //
-    // 数据流：多张图合并成 multipart/mixed 请求体（手动拼 boundary），
-    // 或者只发第一张作为单图（v2.3.17 之前用户一次只发 1 张图）。这里用单图方案：
-    // - URL params: model, system (URL-encoded), text, temperature, max_tokens
-    // - body: 第一张图的 Blob
-    const model = this.VISION_MODEL;
-    const system = this.visionSystemPrompt();
+    // WebView 83 实测踩坑：所有 POST 都 "Failed to fetch"（fetch/XHR 都挂）。
+    // 唯一稳定的通道是 GET（文字聊天一直走的就是 GET）。
+    // GET 限制：CF URL 上限 50KB，所以图必须压到能塞下。
+    // 当前压缩：300x300 JPEG 0.2（onAttachImage 里），dataURL 通常 3-10KB，URL <25KB。
+    const content = [];
+    if (text) content.push({ type: 'text', text });
+    for (const url of images) {
+      content.push({ type: 'image_url', image_url: { url } });
+    }
+    const body = {
+      model: this.VISION_MODEL,
+      system: this.visionSystemPrompt(),
+      messages: [{ role: 'user', content }],
+      temperature: 0.2,
+      max_tokens: 1000,
+    };
+    const jsonBody = JSON.stringify(body);
+    const b64Body = btoa(unescape(encodeURIComponent(jsonBody)));
+    // 紧凑 base64 编码：只转义 +/=，省 30% 长度
+    const safeB64 = b64Body.replace(/\+/g, '%2B').replace(/\//g, '%2F').replace(/=/g, '%3D');
+    const getUrl = 'https://xiaomiao-toh.pages.dev/api/vision?d=' + safeB64;
 
-    // dataURL → Blob（压缩时已是 image/jpeg）
-    const blob = await this._dataUrlToBlob(images[0]);
-    // system 可能含中文，URL 编码后塞 query
-    const qs = new URLSearchParams({
-      model,
-      system,
-      text: text || '',
-      temperature: '0.2',
-      max_tokens: '1000',
-    }).toString();
-    const url = 'https://xiaomiao-toh.pages.dev/api/vision?' + qs;
+    if (getUrl.length > 45000) {
+      throw new Error(`图片太大（URL ${Math.round(getUrl.length/1024)}KB）。这台 WebView 太老只能走 GET 通道，最多 45KB。升级 Android System WebView 或重打 APK 才能发原图。`);
+    }
 
     let lastErr;
     for (let attempt = 0; attempt <= 2; attempt++) {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 25000);
       try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'image/jpeg' },
-          body: blob,
-          signal: ctrl.signal,
-        });
+        const res = await fetch(getUrl, { method: 'GET', signal: ctrl.signal });
         clearTimeout(timer);
         if (res.ok) {
           const data = await res.json();
@@ -3697,7 +3691,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 32;  // 与 www/version.json 同步（APK 包内的基线版本）
+const LOCAL_BUILD = 33;  // 与 www/version.json 同步（APK 包内的基线版本）
 const LS_DISMISSED_BUILD = 'xiaomiao.lastDismissedBuild';  // 用户上次"确认/关闭"的 build
 let remoteUpdateInfo = null;
 
