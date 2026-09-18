@@ -1,8 +1,8 @@
 {
-  "build": 19,
-  "version": "v2.3.5",
+  "build": 20,
+  "version": "v2.3.6",
   "released": "2026-09-18",
-  "changelog": "🛠 彻底修复带图消息（vision 走 GET + base64，跟 chat 共用同通道；图片压缩到 600px JPEG 0.5）",
+  "changelog": "💬 AI 气泡更宽更易读：宽度 88→92%，纯白背景+边框，字号 14→15px；vision 加载文案不再溢出气泡",
   "force": false,
   "min_supported_build": 4
 }
