@@ -3,7 +3,7 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.3.10';
+const APP_VERSION = 'v2.3.11';
 const APK_VERSION_CODE = 19;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
@@ -1921,8 +1921,11 @@ const Assistant = {
 
     this.history.push({ role: 'user', content: userContent });
     this.loading = true;
-    // 直接 push 空 bubble 并设 streaming=true，每个 chunk 增量更新
-    // 视觉模型也用 streaming 标记：callVision 期间显示 typing dots + "正在分析图片…"
+    // 直接 push 空 bubble 并设 streaming=true，视觉模型期间显示 typing dots + "正在分析图片…"
+    // TODO: 流式回复（callDeepSeekStream + fetchStream）已实现，服务端 stream 模式也 OK，
+    // 但 Android WebView 83 与 SSE 兼容有问题，fetchStream 拿不到 chunk，会抛 Failed to fetch
+    // → fallback 也连带着挂（怀疑是 WebView 对 text/event-stream 的某种副作用）。
+    // 暂时回退非流式 JSON 路径，等排查清楚 WebView 问题再启用流式。
     const bubbleIdx = this.history.length;
     this.history.push({ role: 'assistant', content: '', streaming: true, isVision: usedVision, usedVision });
     this.renderMessages();
@@ -1933,23 +1936,13 @@ const Assistant = {
         this.history[bubbleIdx] = { role: 'assistant', content: reply, usedVision: true };
       } else {
         const isUrgent = this.detectUrgent(text);
-        // 流式优先；流式失败（WebView 不支持 / 服务端异常）自动降级非流式 JSON
-        await this.callDeepSeekWithFallback(text, userContent, {
-          onDelta: (delta) => {
-            this.history[bubbleIdx].content += delta;
-            this.updateBubble(bubbleIdx);
-          },
-          onReset: () => {
-            this.history[bubbleIdx].content = '';
-            this.updateBubble(bubbleIdx);
-          },
-        });
-        // 前置紧急横幅（前端保险）
-        const cur = this.history[bubbleIdx];
-        if (isUrgent && !cur.content.includes('急诊') && !cur.content.includes('立即就医')) {
-          cur.content = `${this.URGENT_BANNER}\n\n${cur.content}`;
+        // 暂用非流式路径（WebView 83 + 流式兼容性有问题；先让 AI 稳定可用）
+        const reply = await this.callDeepSeek(text, userContent);
+        this.history[bubbleIdx].content = reply;
+        if (isUrgent && !reply.includes('急诊') && !reply.includes('立即就医')) {
+          this.history[bubbleIdx].content = `${this.URGENT_BANNER}\n\n${reply}`;
         }
-        cur.streaming = false;
+        this.history[bubbleIdx].streaming = false;
         this.updateBubble(bubbleIdx);
       }
     } catch (e) {
@@ -3688,7 +3681,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 24;  // 与 www/version.json 同步（APK 包内的基线版本）
+const LOCAL_BUILD = 25;  // 与 www/version.json 同步（APK 包内的基线版本）
 const LS_DISMISSED_BUILD = 'xiaomiao.lastDismissedBuild';  // 用户上次"确认/关闭"的 build
 let remoteUpdateInfo = null;
 

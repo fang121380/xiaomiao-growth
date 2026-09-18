@@ -1,8 +1,8 @@
 {
-  "build": 24,
-  "version": "v2.3.10",
+  "build": 25,
+  "version": "v2.3.11",
   "released": "2026-09-18",
-  "changelog": "🐛 修复发图片/发文字卡死：流式失败自动降级非流式；callVision 期间显示打字动画",
+  "changelog": "🐛 回退流式：WebView 83 与 SSE 不兼容导致 AI 完全挂掉；改用原非流式 JSON 路径；保留视觉模型打字动画",
   "force": false,
   "min_supported_build": 4
 }
