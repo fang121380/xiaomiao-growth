@@ -3,7 +3,7 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.3.19';
+const APP_VERSION = 'v2.3.20';
 const APK_VERSION_CODE = 19;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
@@ -1576,16 +1576,17 @@ const Assistant = {
       showToast(`已忽略 ${rejected} 个非图片${rejected > 1 ? '' : ''}（${names}${rejected > 2 ? '…' : ''}）`, 2200);
       if (images.length === 0) return;
     }
-    // 上限 4 张
-    const remaining = 4 - this.pendingImages.length;
+    // 上限 1 张（WebView 83 上 GET+base64 是唯一稳定通道，
+    // CF URL 上限 50KB；多张图 URL 会翻倍直接超限，所以视觉问答一次只能发 1 张）
+    const remaining = 1 - this.pendingImages.length;
     if (remaining <= 0) {
-      showToast('最多 4 张图', 1800);
+      showToast('AI 视觉问答一次只能发 1 张图（WebView 限制）', 2400);
       return;
     }
-    if (images.length > remaining) {
-      showToast(`本次选了 ${images.length} 张，只保留前 ${remaining} 张（最多 4 张）`, 2200);
+    if (images.length > 1) {
+      showToast(`视觉问答一次只能发 1 张，已选第 1 张`, 2400);
     }
-    const toProcess = images.slice(0, remaining);
+    const toProcess = images.slice(0, 1);
 
     // Step 1：批量立刻读原图 dataURL 先显示（< 100ms）
     const quickDataUrls = await Promise.all(toProcess.map(file => new Promise((res, rej) => {
@@ -3691,7 +3692,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 33;  // 与 www/version.json 同步（APK 包内的基线版本）
+const LOCAL_BUILD = 34;  // 与 www/version.json 同步（APK 包内的基线版本）
 const LS_DISMISSED_BUILD = 'xiaomiao.lastDismissedBuild';  // 用户上次"确认/关闭"的 build
 let remoteUpdateInfo = null;
 

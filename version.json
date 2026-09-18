@@ -1,8 +1,8 @@
 {
-  "build": 33,
-  "version": "v2.3.19",
+  "build": 34,
+  "version": "v2.3.20",
   "released": "2026-09-18",
-  "changelog": "🐛 视觉问答：回退 GET+base64（你机器上唯一稳定通道），300x300 JPEG 0.2 压图；POST 在你 WebView 上 100% 挂，别无选择",
+  "changelog": "🐛 视觉问答：AI 聊天一次只能发 1 张图（GET+base64 URL 限制）；多张选 1 弹提示",
   "force": false,
   "min_supported_build": 4
 }
