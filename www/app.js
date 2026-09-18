@@ -1921,10 +1921,10 @@ const Assistant = {
 
     this.history.push({ role: 'user', content: userContent });
     this.loading = true;
-    // 文本走流式：直接 push 空 bubble 并设 streaming=true，每个 chunk 增量更新
-    // 视觉模型仍走非流式（multipart POST 路径不同）
+    // 直接 push 空 bubble 并设 streaming=true，每个 chunk 增量更新
+    // 视觉模型也用 streaming 标记：callVision 期间显示 typing dots + "正在分析图片…"
     const bubbleIdx = this.history.length;
-    this.history.push({ role: 'assistant', content: '', streaming: !usedVision, isVision: usedVision, usedVision });
+    this.history.push({ role: 'assistant', content: '', streaming: true, isVision: usedVision, usedVision });
     this.renderMessages();
 
     try {
@@ -1933,9 +1933,16 @@ const Assistant = {
         this.history[bubbleIdx] = { role: 'assistant', content: reply, usedVision: true };
       } else {
         const isUrgent = this.detectUrgent(text);
-        await this.callDeepSeekStream(userContent, (delta) => {
-          this.history[bubbleIdx].content += delta;
-          this.updateBubble(bubbleIdx);
+        // 流式优先；流式失败（WebView 不支持 / 服务端异常）自动降级非流式 JSON
+        await this.callDeepSeekWithFallback(text, userContent, {
+          onDelta: (delta) => {
+            this.history[bubbleIdx].content += delta;
+            this.updateBubble(bubbleIdx);
+          },
+          onReset: () => {
+            this.history[bubbleIdx].content = '';
+            this.updateBubble(bubbleIdx);
+          },
         });
         // 前置紧急横幅（前端保险）
         const cur = this.history[bubbleIdx];
@@ -1954,6 +1961,23 @@ const Assistant = {
     }
     this.loading = false;
     this.renderMessages();
+  },
+
+  /**
+   * 文本问答：流式优先，失败降级非流式
+   * 流式失败常见原因：老 WebView 不支持 ReadableStream、CF 转发 SSE 异常
+   * @param {object} hooks - { onDelta(delta), onReset() }
+   */
+  async callDeepSeekWithFallback(text, userContent, hooks) {
+    try {
+      await this.callDeepSeekStream(userContent, hooks.onDelta);
+    } catch (streamErr) {
+      console.warn('流式失败，降级非流式:', streamErr);
+      // 降级前清掉流式残留的零碎字符
+      hooks.onReset();
+      const reply = await this.callDeepSeek(text, userContent);
+      hooks.onDelta(reply);
+    }
   },
 
   /* 紧急信号检测（借鉴 Codex PetCareKnowledge.urgentFor）
