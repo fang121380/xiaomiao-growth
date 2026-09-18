@@ -952,12 +952,12 @@ body {
  *  弹层（Sheet - 底部抽屉）
  * ==================================================================== */
 .sheet {
-  position: fixed; inset: 0; z-index: 200;
+  position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 200;
   display: flex; flex-direction: column; justify-content: flex-end;
   animation: sheetIn 0.3s var(--ease-out);
 }
 .sheet-mask {
-  position: absolute; inset: 0;
+  position: absolute; top: 0; right: 0; bottom: 0; left: 0;
   background: rgba(0, 0, 0, 0.45);
   animation: maskIn 0.3s var(--ease-out);
 }
@@ -1795,13 +1795,18 @@ body {
   font-size: 11px;
   color: var(--success);
   margin-top: 2px;
-  display: flex; align-items: center; gap: 4px;
+  display: flex; align-items: center; gap: 5px;
 }
-.chat-header-status::before {
-  content: '';
-  width: 6px; height: 6px;
+.chat-status-dot {
+  width: 7px; height: 7px;
   border-radius: 50%;
   background: var(--success);
+  box-shadow: 0 0 0 2px rgba(95, 168, 44, 0.2);
+  animation: statusPulse 2s ease-in-out infinite;
+}
+@keyframes statusPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(95, 168, 44, 0.4); }
+  50% { box-shadow: 0 0 0 5px rgba(95, 168, 44, 0); }
 }
 .chat-clear {
   font-size: 12px;
@@ -1919,6 +1924,182 @@ body {
   border-top: 1px solid var(--border-soft);
   display: flex; gap: 8px; align-items: flex-end;
 }
+
+/* ============ 识图：附件按钮 ============ */
+.chat-attach-btn {
+  width: 42px; height: 42px;
+  border-radius: 14px;
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  color: var(--text-soft);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.2s var(--spring);
+  position: relative;
+}
+.chat-attach-btn:hover { color: var(--primary); border-color: var(--primary-light); }
+.chat-attach-btn:active { transform: scale(0.92); background: var(--primary-soft); color: var(--primary); }
+/* 有图时变激活态 */
+.chat-attach-btn.has-image {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(245, 168, 107, 0.4);
+}
+.chat-attach-btn.has-image::after {
+  content: attr(data-count);
+  position: absolute;
+  top: -4px; right: -4px;
+  min-width: 18px; height: 18px;
+  border-radius: 9px;
+  background: #E15555;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 5px;
+  box-shadow: 0 2px 6px rgba(225, 85, 85, 0.5);
+  animation: badgeIn 0.3s var(--spring);
+}
+@keyframes badgeIn {
+  from { transform: scale(0); }
+  to { transform: scale(1); }
+}
+
+/* ============ 识图：待发送预览条 ============ */
+.chat-pending-images {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border-soft);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.chat-pending-images[hidden] { display: none; }
+.chat-pending-thumb {
+  position: relative;
+  width: 60px; height: 60px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg);
+  animation: thumbIn 0.35s var(--spring);
+  transition: all 0.2s var(--spring);
+}
+.chat-pending-thumb.removing {
+  animation: thumbOut 0.2s ease-in forwards;
+}
+@keyframes thumbIn {
+  0% { transform: scale(0.4); opacity: 0; }
+  60% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes thumbOut {
+  to { transform: scale(0); opacity: 0; width: 0; margin-right: -8px; }
+}
+.chat-pending-thumb img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.chat-pending-thumb-remove {
+  position: absolute;
+  top: -4px; right: -4px;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.75);
+  color: #fff;
+  border: 2px solid var(--bg-card);
+  font-size: 13px;
+  line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  transition: all 0.15s var(--spring);
+  opacity: 0;
+}
+.chat-pending-thumb:hover .chat-pending-thumb-remove { opacity: 1; }
+.chat-pending-thumb-remove:active { transform: scale(0.85); background: #E15555; }
+
+/* ============ 识图：用户消息里的图片 ============ */
+.chat-bubble-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.chat-bubble-images img {
+  width: 120px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 8px;
+  display: block;
+  cursor: pointer;
+  transition: all 0.2s var(--spring);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.chat-bubble-images img:active { transform: scale(0.95); }
+.chat-bubble-images img:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+.chat-bubble.user .chat-bubble-images img {
+  /* 用户气泡里图稍小，给文字留位置 */
+  width: 100px; height: 100px;
+}
+
+/* ============ 视觉模型免责声明 ============ */
+.chat-disclaimer {
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, rgba(255, 224, 204, 0.5), rgba(255, 241, 214, 0.5));
+  border-left: 3px solid #E07B3A;
+  border-radius: 0 8px 8px 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-soft);
+  box-shadow: 0 1px 3px rgba(224, 123, 58, 0.08);
+}
+.chat-disclaimer strong { color: #C55318; font-weight: 600; }
+
+/* ============ AI 视觉强调条 ============ */
+.chat-bubble.vision .chat-bubble-text {
+  border-left: 3px solid #F5A86B;
+  padding-left: 12px;
+  background: linear-gradient(90deg, rgba(255, 224, 204, 0.18), transparent 40%);
+}
+
+/* ============ Typing - vision 文案 ============ */
+.chat-typing-label {
+  display: inline-block;
+  font-size: 12px;
+  color: var(--primary-deep);
+  margin-right: 4px;
+  animation: typingFade 1.4s ease-in-out infinite;
+}
+@keyframes typingFade {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+/* ============ 全屏图片查看器 ============ */
+.img-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  background: rgba(0,0,0,0.92);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  animation: viewerIn 0.25s ease-out;
+}
+.img-viewer img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+  animation: imgZoomIn 0.3s var(--spring);
+}
+@keyframes viewerIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes imgZoomIn { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
 .chat-input {
   flex: 1;
   padding: 10px 14px;
