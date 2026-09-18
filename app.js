@@ -3,7 +3,7 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.3.13';
+const APP_VERSION = 'v2.3.14';
 const APK_VERSION_CODE = 19;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
@@ -1558,7 +1558,7 @@ const Assistant = {
 
   /**
    * 处理文件选择（3 个 attach input 共享的 change 回调）
-   * - 图片：压缩到 600px / JPEG 0.5 → 进 pendingImages（base64 约 25-35KB，GET URL <50KB）
+   * - 图片：压缩到 400px / JPEG 0.3 → 进 pendingImages（base64 ~5-15KB，GET URL <50KB）
    * - 非图片（PDF/文档）：暂不支持，toast 提示
    */
   async onAttachImage(e) {
@@ -1606,10 +1606,10 @@ const Assistant = {
     });
     this.updateSendBtn();
 
-    // Step 2：后台批量异步压缩到 600px JPEG 0.5
+    // Step 2：后台批量异步压缩到 400px JPEG 0.3（压狠一点，dataURL 必须 <30KB 才不会超 CF URL 上限）
     toProcess.forEach(async (file, i) => {
       try {
-        const blob = await compressImage(file, 600, 0.5);
+        const blob = await compressImage(file, 400, 0.3);
         const compressedDataUrl = await new Promise((res, rej) => {
           const r = new FileReader();
           r.onload = () => res(r.result);
@@ -1647,131 +1647,67 @@ const Assistant = {
   /**
    * 带图消息：GET + ?d=base64(query) 到 /api/vision
    * - 跟 chat 纯文本共用同一条 GET 通道，绕开 WebView 83 上所有 POST 路径都坏的 bug
-   * - 图片已在 onAttachImage 压缩到 600px JPEG 0.5（base64 ~25-35KB，URL <50KB）
+   * - 图片已在 onAttachImage 压缩到 400px JPEG 0.3（base64 ~5-15KB，URL <50KB）
    */
   async callVision(text, images) {
-    // Android WebView 83 上所有 POST 路径都不可靠：
-    //   - fetch POST 空 body
-    //   - fetch POST multipart 整个抛 Failed to fetch
-    //   - XHR POST multipart 部分情况下也抛
-    // 唯一稳的：iframe + form 同步提交（旧浏览器通杀）+ 读 iframe 文档拿响应
-    // CF Pages Functions 支持 CORS POST + multipart。
-    const model = this.VISION_MODEL;
-    const system = this.visionSystemPrompt();
-
-    // dataURL → Blob
-    const blobs = [];
+    // Android WebView 83 上 POST 路径全线崩（fetch 空 body / fetch multipart 抛错 /
+    // XHR multipart 抛错 / iframe 跨域被拦），实测只剩 GET + base64 能跑通。
+    // CF Pages URL 上限约 50KB，所以图片必须在压缩阶段就压到足够小。
+    // 见 onAttachImage：AI 聊天的图压缩到 400x400 JPEG 0.3，dataURL ~10-30KB，
+    // 整个 URL 通常 <50KB，可过 CF 限制。
+    const content = [];
+    if (text) content.push({ type: 'text', text });
     for (const url of images) {
-      const blob = await this._dataUrlToBlob(url);
-      blobs.push(blob);
+      content.push({ type: 'image_url', image_url: { url } });
     }
+    const body = {
+      model: this.VISION_MODEL,
+      system: this.visionSystemPrompt(),
+      messages: [{ role: 'user', content }],
+      temperature: 0.2,
+      max_tokens: 1000,
+    };
+    const jsonBody = JSON.stringify(body);
+    const b64Body = btoa(unescape(encodeURIComponent(jsonBody)));
+    const url = 'https://xiaomiao-toh.pages.dev/api/vision?d=' + encodeURIComponent(b64Body);
 
-    return this._iframeUpload({
-      url: 'https://xiaomiao-toh.pages.dev/api/vision',
-      fields: { model, system, text: text || '', temperature: '0.2', max_tokens: '1000' },
-      files: blobs,
-      timeoutMs: 25000,
-    });
-  },
-
-  /**
-   * iframe + form 同步上传（multipart/form-data）
-   * - 浏览器最古老的文件上传方式，WebView 83 上绝对可靠
-   * - 通过 hidden iframe 接收响应，读 iframe 文档解析 JSON
-   * - 文件用 Blob + DataTransfer 注入到 input[type=file]
-   */
-  _iframeUpload({ url, fields, files, timeoutMs = 25000 }) {
-    return new Promise((resolve, reject) => {
-      const iframeName = '_upload_iframe_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
-      const iframe = document.createElement('iframe');
-      iframe.name = iframeName;
-      iframe.id = iframeName;
-      iframe.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;border:0;visibility:hidden;';
-      document.body.appendChild(iframe);
-
-      let settled = false;
-      const cleanup = () => {
-        try { document.body.removeChild(iframe); } catch (_) {}
-        try { document.body.removeChild(form); } catch (_) {}
-      };
-      const finish = (fn, val) => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        fn(val);
-      };
-
-      const timer = setTimeout(() => {
-        finish(reject, new Error(`请求超时（>${Math.round(timeoutMs / 1000)}秒）`));
-      }, timeoutMs);
-
-      iframe.onload = () => {
+    let lastErr;
+    for (let attempt = 0; attempt <= 2; attempt++) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 25000);
+      try {
+        const res = await fetch(url, { method: 'GET', signal: ctrl.signal });
         clearTimeout(timer);
-        try {
-          const doc = iframe.contentDocument || iframe.contentWindow.document;
-          const text = (doc.body && doc.body.innerText) || doc.documentElement.innerText || '';
-          // 响应是 JSON
-          let data;
-          try { data = JSON.parse(text); }
-          catch (_) {
-            return finish(reject, new Error('响应解析失败: ' + text.slice(0, 200)));
-          }
-          if (data && data.choices && data.choices[0] && data.choices[0].message) {
-            const reply = data.choices[0].message.content;
-            if (!reply) return finish(reject, new Error('返回为空'));
-            return finish(resolve, reply);
-          }
-          if (data && data.error) {
-            return finish(reject, new Error('API 错误: ' + (data.error.message || JSON.stringify(data.error).slice(0, 200))));
-          }
-          finish(reject, new Error('响应格式异常: ' + text.slice(0, 200)));
-        } catch (e) {
-          finish(reject, new Error('读取 iframe 响应失败: ' + e.message));
+        if (res.ok) {
+          const data = await res.json();
+          const reply = data.choices?.[0]?.message?.content;
+          if (!reply) throw new Error('返回为空');
+          return reply;
         }
-      };
-      iframe.onerror = () => {
+        let errDetail = '';
+        try { errDetail = (await res.json()).error?.message || ''; } catch {}
+        lastErr = new Error(`API ${res.status}${errDetail ? ' · ' + errDetail : ''}`);
+        if (res.status >= 500 && attempt < 2) {
+          await new Promise(r => setTimeout(r, 800 * Math.pow(2, attempt)));
+          continue;
+        }
+        throw lastErr;
+      } catch (err) {
         clearTimeout(timer);
-        finish(reject, new Error('网络开了小差：iframe 加载错误'));
-      };
-
-      // 构建 form
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = url;
-      form.target = iframeName;
-      form.enctype = 'multipart/form-data';
-      form.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:0;height:0;border:0;';
-
-      // 文本字段
-      for (const [k, v] of Object.entries(fields || {})) {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = k;
-        input.value = String(v);
-        form.appendChild(input);
+        lastErr = err;
+        const isNetworkish = err.name === 'AbortError' ||
+                             err.message.startsWith('Failed to fetch') ||
+                             err.message.includes('NetworkError');
+        if (attempt < 2 && isNetworkish) {
+          await new Promise(r => setTimeout(r, 800 * Math.pow(2, attempt)));
+          continue;
+        }
+        if (err.name === 'AbortError') throw new Error('请求超时（>25秒）');
+        if (err.message.startsWith('API') || err.message === '返回为空') throw err;
+        throw new Error(`网络开了小差：${err.message}`);
       }
-
-      // 文件字段（多个 image）
-      (files || []).forEach((blob, i) => {
-        const fileInput = document.createElement('input');
-        fileInput.type = 'file';
-        fileInput.name = 'image';
-        fileInput.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;';
-        // 用 DataTransfer 注入 File 对象
-        try {
-          const file = new File([blob], `image_${i}.jpg`, { type: blob.type || 'image/jpeg' });
-          const dt = new DataTransfer();
-          dt.items.add(file);
-          fileInput.files = dt.files;
-        } catch (e) {
-          // 老 WebView 不支持 DataTransfer，回退：直接把 blob 当 input.value（不靠谱但试一下）
-        }
-        form.appendChild(fileInput);
-      });
-
-      document.body.appendChild(form);
-      form.submit();
-    });
+    }
+    throw lastErr;
   },
 
   /**
@@ -3749,7 +3685,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 27;  // 与 www/version.json 同步（APK 包内的基线版本）
+const LOCAL_BUILD = 28;  // 与 www/version.json 同步（APK 包内的基线版本）
 const LS_DISMISSED_BUILD = 'xiaomiao.lastDismissedBuild';  // 用户上次"确认/关闭"的 build
 let remoteUpdateInfo = null;
 

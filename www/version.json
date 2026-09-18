@@ -1,8 +1,8 @@
 {
-  "build": 27,
-  "version": "v2.3.13",
+  "build": 28,
+  "version": "v2.3.14",
   "released": "2026-09-18",
-  "changelog": "🐛 视觉问答：换 iframe + form 同步提交（最古老的浏览器兼容方案），彻底绕开 WebView 83 上所有 POST 路径的 bug",
+  "changelog": "🐛 视觉问答：图片压缩到 400x400 JPEG 0.3（GET+base64 URL 必 <50KB），回退到 GET 通道；WebView 83 上唯一稳定的路子",
   "force": false,
   "min_supported_build": 4
 }
