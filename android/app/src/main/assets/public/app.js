@@ -3,7 +3,7 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.4.0';
+const APP_VERSION = 'v2.4.1';
 const APK_VERSION_CODE = 20;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
@@ -1802,9 +1802,9 @@ const Assistant = {
 
   /**
    * 多张图拼成 2×2 网格单图（Canvas API）
-   * - 每格 200x200，最多 4 张拼成 400x400 单图
-   * - 压缩到 JPEG 0.5，单图 dataURL <50KB
-   * - AI 看拼图自然综合分析，给一条回复
+   * - 每格 400x400，最多 4 张拼成 800x800 单图
+   * - 压缩到 JPEG 0.5，AI 视觉模型能看清每张图
+   * - 通过 NativeUpload 插件 POST 发送，无 URL 长度限制
    */
   _mergeImagesToGrid(dataUrls) {
     return new Promise((resolve, reject) => {
@@ -1817,7 +1817,7 @@ const Assistant = {
       Promise.all(imgs.map(i => new Promise((r, rj) => {
         i.onload = r; i.onerror = (ev) => rj(new Error(`Image.onerror type=${ev?.type || 'unknown'}`));
       }))).then(() => {
-        const TILE = 200;
+        const TILE = 400;
         const cols = imgs.length === 1 ? 1 : 2;
         const rows = Math.ceil(imgs.length / cols);
         const canvas = document.createElement('canvas');
@@ -1827,21 +1827,38 @@ const Assistant = {
         if (!ctx) return reject(new Error('canvas.getContext("2d") 失败（WebView 不支持？）'));
         ctx.fillStyle = '#fff';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
+        // 画细分隔线，让 AI 视觉模型看清有 4 张图
+        ctx.strokeStyle = '#ddd';
+        ctx.lineWidth = 2;
         imgs.forEach((img, i) => {
           const x = (i % cols) * TILE;
           const y = Math.floor(i / cols) * TILE;
-          const scale = Math.max(TILE / img.width, TILE / img.height);
+          // contain 模式（完整显示，不裁剪）+ 白边留 padding
+          const scale = Math.min(TILE / img.width, TILE / img.height);
           const w = img.width * scale;
           const h = img.height * scale;
+          ctx.fillStyle = '#fafafa';
+          ctx.fillRect(x, y, TILE, TILE);
           ctx.drawImage(img, x + (TILE - w) / 2, y + (TILE - h) / 2, w, h);
+          // 标号（让 AI 能引用"图1/图2/图3/图4"）
+          ctx.fillStyle = '#333';
+          ctx.font = 'bold 20px sans-serif';
+          ctx.fillText(`图${i+1}`, x + 8, y + 24);
+          // 画边框分隔
+          ctx.strokeRect(x + 1, y + 1, TILE - 2, TILE - 2);
         });
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(0, 0, canvas.width, canvas.height);
+
         canvas.toBlob(b => {
           if (!b) return reject(new Error('canvas.toBlob 返回 null'));
+          console.log('[VISION] 合并图:', canvas.width + 'x' + canvas.height, ', blob size:', b.size, '字节');
           const reader = new FileReader();
           reader.onload = () => resolve(reader.result);
           reader.onerror = (ev) => reject(new Error(`FileReader.onerror type=${ev?.type || 'unknown'}`));
           reader.readAsDataURL(b);
-        }, 'image/jpeg', 0.5);
+        }, 'image/jpeg', 0.6);
       }).catch(err => reject(err instanceof Error ? err : new Error(String(err) || '未知错误')));
     });
   },
@@ -3818,7 +3835,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 39;  // 与 www/version.json 同步（APK 包内的基线版本）
+const LOCAL_BUILD = 40;  // 与 www/version.json 同步（APK 包内的基线版本）
 const LS_DISMISSED_BUILD = 'xiaomiao.lastDismissedBuild';  // 用户上次"确认/关闭"的 build
 let remoteUpdateInfo = null;
 
