@@ -1708,11 +1708,23 @@ const Assistant = {
     }).toString();
     const url = 'https://xiaomiao-toh.pages.dev/api/vision?' + qs;
 
-    const result = await Capacitor.Plugins.NativeUpload.post({
-      url,
-      bodyBase64,
-      contentType: mime,
-    });
+    console.log('[VISION]', '原生 POST', url.length, '字符, base64', bodyBase64.length, '字符');
+
+    // 60秒超时保护
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('原生上传超时（60秒）')), 60000)
+    );
+    let result;
+    try {
+      result = await Promise.race([
+        Capacitor.Plugins.NativeUpload.post({ url, bodyBase64, contentType: mime }),
+        timeoutPromise,
+      ]);
+    } catch (e) {
+      console.error('[VISION] 原生 POST 失败，降级 GET:', e.message);
+      // 降级：把图片压小再走 GET 备用通道
+      throw new Error('原生 POST 失败：' + e.message + '。请用 GET 通道但当前图太大，请换张小的。');
+    }
     if (!result || !result.body) throw new Error('空响应');
     let data;
     try { data = JSON.parse(result.body); }
