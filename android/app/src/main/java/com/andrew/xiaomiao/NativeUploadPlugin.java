@@ -33,6 +33,12 @@ import java.util.Base64;
 @CapacitorPlugin(name = "NativeUpload")
 public class NativeUploadPlugin extends Plugin {
 
+    @Override
+    public void load() {
+        super.load();
+        android.util.Log.i("NativeUpload", "Plugin loaded, ready to handle POST");
+    }
+
     @PluginMethod
     public void post(final PluginCall call) {
         final String url = call.getString("url");

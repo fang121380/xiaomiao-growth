@@ -1695,13 +1695,12 @@ const Assistant = {
   /** 检测 NativeUpload 原生插件是否可用 */
   async _isNativeUploadAvailable() {
     try {
-      // Capacitor 暴露插件的方式：在原生环境里 Cap 存在 + 插件已注册
       if (typeof Capacitor === 'undefined') return false;
       if (typeof Capacitor.Plugins === 'undefined') return false;
-      // 原生平台 + 插件方法存在 → 可用
       const platform = Capacitor.getPlatform && Capacitor.getPlatform();
       const isNative = platform === 'android' || platform === 'ios';
       const pluginAvailable = Capacitor.Plugins.NativeUpload && typeof Capacitor.Plugins.NativeUpload.post === 'function';
+      console.log('[VISION]', 'platform=' + platform + ', pluginAvailable=' + pluginAvailable);
       return isNative && pluginAvailable;
     } catch (_) {
       return false;
