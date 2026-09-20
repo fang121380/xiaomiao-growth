@@ -6,13 +6,15 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
-import java.io.BufferedReader;
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
+import java.io.IOException;
+import java.util.concurrent.TimeUnit;
+
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 
 /**
  * Native Upload Plugin — Capacitor 自定义插件
@@ -90,60 +92,47 @@ public class NativeUploadPlugin extends Plugin {
 
         // 异步执行（不能在主线程做网络 IO）
         new Thread(() -> {
-            HttpURLConnection conn = null;
             try {
                 // 用 android.util.Base64（兼容 API 24+，java.util.Base64.getDecoder() 需要 API 26+）
                 byte[] bodyBytes = android.util.Base64.decode(bodyBase64, android.util.Base64.DEFAULT);
 
-                URL u = new URL(url);
-                conn = (HttpURLConnection) u.openConnection();
-                conn.setRequestMethod("POST");
-                conn.setDoOutput(true);
-                conn.setUseCaches(false);
-                conn.setRequestProperty("Content-Type", contentType);
-                conn.setRequestProperty("Content-Length", String.valueOf(bodyBytes.length));
-                conn.setConnectTimeout(15000);
-                conn.setReadTimeout(30000);
-                conn.setFixedLengthStreamingMode(bodyBytes.length);
+                // 用 OkHttp 替代 HttpURLConnection（在 Android 7 上稳定，HttpURLConnection 已知 bug）
+                OkHttpClient client = new OkHttpClient.Builder()
+                        .connectTimeout(15, TimeUnit.SECONDS)
+                        .readTimeout(30, TimeUnit.SECONDS)
+                        .writeTimeout(30, TimeUnit.SECONDS)
+                        .retryOnConnectionFailure(true)
+                        .build();
 
-                // 写 body
-                OutputStream os = conn.getOutputStream();
-                try {
-                    os.write(bodyBytes);
-                    os.flush();
-                } finally {
-                    os.close();
+                MediaType mediaType = MediaType.parse(contentType + "; charset=utf-8");
+                RequestBody reqBody = RequestBody.create(bodyBytes, mediaType);
+
+                Request request = new Request.Builder()
+                        .url(url)
+                        .post(reqBody)
+                        .build();
+
+                android.util.Log.i("NativeUpload", "OkHttp POST start url=" + url + " bodyLen=" + bodyBytes.length);
+
+                try (Response response = client.newCall(request).execute()) {
+                    int status = response.code();
+                    ResponseBody respBody = response.body();
+                    String respString = respBody != null ? respBody.string() : "";
+                    String respContentType = response.header("Content-Type");
+                    if (respContentType == null) respContentType = "";
+
+                    android.util.Log.i("NativeUpload", "OkHttp POST done status=" + status + " bodyLen=" + respString.length());
+
+                    JSObject ret = new JSObject();
+                    ret.put("status", status);
+                    ret.put("body", respString);
+                    ret.put("contentType", respContentType);
+                    call.resolve(ret);
                 }
-
-                int status = conn.getResponseCode();
-                InputStream is = (status >= 200 && status < 300)
-                        ? conn.getInputStream()
-                        : conn.getErrorStream();
-
-                String respBody = readAll(is);
-                String respContentType = conn.getContentType() != null ? conn.getContentType() : "";
-
-                JSObject ret = new JSObject();
-                ret.put("status", status);
-                ret.put("body", respBody);
-                ret.put("contentType", respContentType);
-                call.resolve(ret);
             } catch (Exception e) {
-                android.util.Log.e("NativeUpload", "POST failed: " + e.getMessage(), e);
+                android.util.Log.e("NativeUpload", "POST failed: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
                 call.reject("Native POST failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
-            } finally {
-                if (conn != null) conn.disconnect();
             }
-        });
-    }
-
-    private String readAll(InputStream is) throws Exception {
-        if (is == null) return "";
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        byte[] buf = new byte[4096];
-        int n;
-        while ((n = is.read(buf)) > 0) baos.write(buf, 0, n);
-        is.close();
-        return baos.toString("UTF-8");
+        }).start();
     }
 }
