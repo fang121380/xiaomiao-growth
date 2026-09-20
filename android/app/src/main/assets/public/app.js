@@ -1569,7 +1569,16 @@ const Assistant = {
     if (files.length === 0) return;
 
     // 筛选图片（type 判定）
-    const images = files.filter(f => f.type.startsWith('image/'));
+    // 排除 HEIC/HEIF：Android WebView 83 不原生支持，会导致 _mergeImagesToGrid 崩溃
+    const images = files.filter(f => {
+      if (!f.type.startsWith('image/')) return false;
+      const t = (f.type || '').toLowerCase();
+      if (t === 'image/heic' || t === 'image/heif') {
+        showToast(`iPhone HEIC 图暂不支持，请在相册设置改为「兼容性最佳」后重发`, 3000);
+        return false;
+      }
+      return true;
+    });
     const rejected = files.length - images.length;
     if (rejected > 0) {
       const names = files.filter(f => !f.type.startsWith('image/')).map(f => f.name || '文件').slice(0, 2).join('、');
@@ -1606,9 +1615,8 @@ const Assistant = {
     });
     this.updateSendBtn();
 
-    // Step 2：直接读原图 dataURL（不压缩）
-    // 不限制图片大小，AI 视觉问答直接用原图
-    // 原图通过 NativeUpload 原生 POST 发送，无 URL 限制
+    // Step 2：读原图 + 自动缩到 ≤1600px（防 4 张原图 192MB Image.decode OOM；不限制文件大小，只限制像素）
+    // 画质 1600px JPEG 0.82 完全够 AI 视觉识别，体积却从 ~50MB/张 降到 ~500KB/张
     toProcess.forEach(async (file, i) => {
       try {
         const compressedDataUrl = await new Promise((res, rej) => {
@@ -1617,7 +1625,14 @@ const Assistant = {
           r.onerror = rej;
           r.readAsDataURL(file);
         });
-        this.pendingImages[startIdx + i] = compressedDataUrl;
+        // 缩到 ≤1600px 防 OOM（canvas 解码 = w*h*4 bytes）
+        let processedDataUrl = compressedDataUrl;
+        try {
+          processedDataUrl = await downscaleImage(compressedDataUrl, 1600);
+        } catch (dsErr) {
+          console.warn('[VISION] downscale 失败，用原图:', dsErr.message);
+        }
+        this.pendingImages[startIdx + i] = processedDataUrl;
         this.renderPendingImages();
         // 移除该缩略图的 loading 类
         requestAnimationFrame(() => {
@@ -1935,6 +1950,39 @@ const Assistant = {
    * - 压缩到 JPEG 0.5，AI 视觉模型能看清每张图
    * - 通过 NativeUpload 插件 POST 发送，无 URL 长度限制
    */
+  /**
+   * 把 dataURL 缩到 ≤maxDim px（长边）。canvas 解码 = w*h*4 bytes，4032×3024 单图就 48MB。
+   * 4 张原图同时解码会 OOM，必须先缩再画。
+   * 不限制文件大小，只限制像素 — 1600px 对 AI 视觉识别完全够用。
+   */
+  downscaleImage(dataUrl, maxDim = 1600) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const w = img.naturalWidth, hh = img.naturalHeight;
+        if (!w || !hh) return reject(new Error('图片尺寸为 0（SVG 缺 viewBox？）'));
+        if (w <= maxDim && hh <= maxDim) return resolve(dataUrl); // 已经够小
+        const scale = Math.min(maxDim / w, maxDim / hh);
+        const cw = Math.max(1, Math.round(w * scale));
+        const ch = Math.max(1, Math.round(hh * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = cw; canvas.height = ch;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return reject(new Error('canvas 不可用'));
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, cw, ch);
+        ctx.drawImage(img, 0, 0, cw, ch);
+        try {
+          resolve(canvas.toDataURL('image/jpeg', 0.82));
+        } catch (e) {
+          reject(new Error('canvas.toDataURL 失败'));
+        }
+      };
+      img.onerror = (ev) => reject(new Error(`图片解码失败（HEIC/损坏？）type=${ev?.type || 'unknown'}`));
+      img.src = dataUrl;
+    });
+  },
+
   _mergeImagesToGrid(dataUrls) {
     return new Promise((resolve, reject) => {
       const imgs = dataUrls.map((u, i) => {
@@ -4039,7 +4087,7 @@ async function checkApkUpdate() {
  * 用于「立即检查更新」按钮的主动诊断
  */
 async function checkApkUpdateVerbose(verbose) {
-  const url = 'https://xiaomiao-toh.pages.dev/www/apk-version.json?_=' + Date.now();
+  const url = 'https://xiaomiao-toh.pages.dev/apk-version.json?_=' + Date.now();
   try {
     const r = await fetch(url, { cache: 'no-store', mode: 'cors' });
     if (!r.ok) {
