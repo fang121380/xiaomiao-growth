@@ -3,7 +3,7 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.4.4';
+const APP_VERSION = 'v2.4.5';
 const APK_VERSION_CODE = 20;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
@@ -1606,16 +1606,16 @@ const Assistant = {
     });
     this.updateSendBtn();
 
-    // Step 2：后台批量异步压缩到 600px JPEG 0.5
-    // 现在走 XHR POST form-urlencoded 不再受 CF URL 长度限制，可以恢复原画质
+    // Step 2：直接读原图 dataURL（不压缩）
+    // 不限制图片大小，AI 视觉问答直接用原图
+    // 原图通过 NativeUpload 原生 POST 发送，无 URL 限制
     toProcess.forEach(async (file, i) => {
       try {
-        const blob = await compressImage(file, 600, 0.5);
         const compressedDataUrl = await new Promise((res, rej) => {
           const r = new FileReader();
           r.onload = () => res(r.result);
           r.onerror = rej;
-          r.readAsDataURL(blob);
+          r.readAsDataURL(file);
         });
         this.pendingImages[startIdx + i] = compressedDataUrl;
         this.renderPendingImages();
@@ -1625,8 +1625,8 @@ const Assistant = {
           if (thumb) thumb.classList.remove('loading');
         });
       } catch (err) {
-        console.error('图片压缩失败', err);
-        // 失败时保留原图（不阻塞用户发送）
+        console.error('图片读取失败', err);
+        // 失败时移除缩略图（避免阻塞用户发送）
         const thumb = document.querySelector(`.chat-pending-thumb[data-idx="${startIdx + i}"]`);
         if (thumb) thumb.classList.remove('loading');
       }
@@ -3851,7 +3851,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 43;  // 与 www/version.json 同步（APK 包内的基线版本）
+const LOCAL_BUILD = 44;  // 与 www/version.json 同步（APK 包内的基线版本）
 const LS_DISMISSED_BUILD = 'xiaomiao.lastDismissedBuild';  // 用户上次"确认/关闭"的 build
 let remoteUpdateInfo = null;
 

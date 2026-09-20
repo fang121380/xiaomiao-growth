@@ -1,8 +1,8 @@
 {
-  "build": 43,
-  "version": "v2.4.4",
+  "build": 44,
+  "version": "v2.4.5",
   "released": "2026-09-20",
-  "changelog": "🆓 去掉所有图片大小限制：JS 端无 800KB 检查，服务端上限 5MB→30MB。DeepSeek 实测接受到 5MB+ JPEG，由它自己判断。",
+  "changelog": "🆓 完全去掉图片大小限制：AI 聊天选图不再压缩，原图直接发。NativeUpload POST 无大小限制。",
   "force": true,
   "min_supported_build": 4
 }
