@@ -1860,9 +1860,9 @@ const Assistant = {
 
     console.log('[VISION]', '原生 POST', url.length, '字符, base64', bodyBase64.length, '字符');
 
-    // 60秒超时保护
+    // 20秒超时（NativeUpload 内部 15s 连接 + 30s 读，但 20s 早报错早 fallback）
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('原生上传超时（60秒）')), 60000)
+      setTimeout(() => reject(new Error('原生上传超时（20秒）')), 20000)
     );
     let result;
     try {
@@ -1871,14 +1871,19 @@ const Assistant = {
         timeoutPromise,
       ]);
     } catch (nativeErr) {
-      console.error('[VISION] 原生 POST 失败，尝试降级 GET:', nativeErr.message);
-      // 真降级：把图片压小后走 GET（前提是 URL 长度允许）
-      // 重算 image dataURL 的 GET URL 长度
+      console.error('[VISION] 原生 POST 失败，尝试 GET fallback（自动压缩）:', nativeErr.message);
+      // GET fallback：先把图压到 ≤1200px JPEG 0.5（确保 base64 <30KB，URL <45KB）
+      let fallbackDataUrl = imageDataUrl;
+      try {
+        fallbackDataUrl = await this.downscaleImage(imageDataUrl, 1200);
+      } catch (dsErr) {
+        console.warn('[VISION] fallback 压缩失败:', dsErr.message);
+      }
       const probeBody = {
         model: this.VISION_MODEL,
         system: this.visionSystemPrompt(),
         messages: [{ role: 'user', content: [
-          { type: 'image_url', image_url: { url: imageDataUrl } },
+          { type: 'image_url', image_url: { url: fallbackDataUrl } },
           ...(text ? [{ type: 'text', text }] : []),
         ]}],
         temperature: 0.2,
@@ -1888,10 +1893,10 @@ const Assistant = {
       const probeB64 = btoa(unescape(encodeURIComponent(probeJson)));
       const probeSafe = probeB64.replace(/\+/g, '%2B').replace(/\//g, '%2F').replace(/=/g, '%3D');
       const probeUrl = 'https://xiaomiao-toh.pages.dev/api/vision?d=' + probeSafe;
+      console.log('[VISION] fallback GET URL=' + probeUrl.length + ' 字符');
       if (probeUrl.length > 45000) {
-        throw new Error('原生 POST 失败：' + nativeErr.message + '。当前图太大，GET 通道也发不出去（URL ' + Math.round(probeUrl.length/1024) + 'KB）。请换张小的图。');
+        throw new Error('原生 POST 失败 + 图太大无法 fallback（URL ' + Math.round(probeUrl.length/1024) + 'KB）。请换张更小的图。');
       }
-      // 走 GET fallback
       return await this._callVisionGet(text, probeUrl);
     }
     if (!result || !result.body) throw new Error('空响应');
@@ -1973,7 +1978,8 @@ const Assistant = {
         ctx.fillRect(0, 0, cw, ch);
         ctx.drawImage(img, 0, 0, cw, ch);
         try {
-          resolve(canvas.toDataURL('image/jpeg', 0.82));
+          // q=0.5 足够 AI 看清楚，且 base64 更小（确保 GET fallback URL <45KB）
+          resolve(canvas.toDataURL('image/jpeg', 0.5));
         } catch (e) {
           reject(new Error('canvas.toDataURL 失败'));
         }
