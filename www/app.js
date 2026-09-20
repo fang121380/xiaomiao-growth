@@ -3977,26 +3977,49 @@ function refreshAboutVerStatus() {
 }
 
 async function boot() {
+  // v2.4.7+ boot 进度诊断：每一步输出 + 显示在 splash 上，让用户看到卡哪
+  window.__bootLog = [];
+  const bootStep = (msg) => {
+    console.log('[BOOT]', msg);
+    window.__bootLog.push({ t: Date.now(), msg });
+    const splash = $('#splash');
+    if (splash) {
+      const old = splash.querySelector('.boot-step') || document.createElement('div');
+      old.className = 'boot-step';
+      old.style.cssText = 'position:absolute;bottom:20px;left:0;right:0;text-align:center;font-size:11px;color:#a07050;font-family:monospace;';
+      old.textContent = msg;
+      if (!splash.contains(old)) splash.appendChild(old);
+    }
+  };
+  bootStep('start');
+
   // v2.4.6+: 强制清缓存 + unregister SW（用户真机 SW 没及时自杀导致卡旧 JS）
   // 不依赖 SW 自己的 install/activate 时机
   try {
+    bootStep('clearing SW');
     if ('serviceWorker' in navigator) {
       const regs = await navigator.serviceWorker.getRegistrations();
+      bootStep('unregister ' + regs.length + ' SW');
       for (const r of regs) { try { await r.unregister(); } catch {} }
     }
+    bootStep('clearing caches');
     if ('caches' in window) {
       const keys = await caches.keys();
       for (const k of keys) { try { await caches.delete(k); } catch {} }
     }
+    bootStep('version check');
     // 如果标记的 build 与当前 build 不一致（说明 SW 之前缓存了旧版），强制 reload
     const marked = localStorage.getItem('xiaomiao.boot.build');
     if (marked && marked !== String(LOCAL_BUILD)) {
       localStorage.setItem('xiaomiao.boot.build', String(LOCAL_BUILD));
+      bootStep('build mismatch, reload');
       location.replace(location.href.split('#')[0] + '?_=' + Date.now());
       return;
     }
     localStorage.setItem('xiaomiao.boot.build', String(LOCAL_BUILD));
+    bootStep('SW/cache done');
   } catch (e) {
+    bootStep('SW/cache ERR: ' + e.message);
     console.warn('[BOOT] SW/cache cleanup failed:', e);
   }
 
