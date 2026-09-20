@@ -1654,10 +1654,9 @@ const Assistant = {
     // 主通道：原生 POST（Capacitor NativeUpload 插件 + Java HttpURLConnection）
     //   完全绕开 WebView 83 的所有 POST bug；body 无大小限制；可发完整画质图
     // 备用通道：GET+base64（v2.3.18 之前的方案，老 WebView 上唯一能用）
-    //   受 CF URL 50KB 限制，所以这里把图压小
-    //
-    // 优先级：先试原生 POST，NativeUpload 插件不可用时降级 GET+base64
+    //   受 CF URL 50KB 限制
     const useNative = await this._isNativeUploadAvailable();
+    console.log('[VISION]', 'useNative=' + useNative);
 
     let imageDataUrl;
     if (images.length === 1) {
@@ -1666,10 +1665,30 @@ const Assistant = {
       imageDataUrl = await this._mergeImagesToGrid(images);
     }
 
+    // GET 通道 URL 长度预检：超限直接报清晰错误，不浪费等件起 25s×3 次请求
+    const probeBody = {
+      model: this.VISION_MODEL,
+      system: this.visionSystemPrompt(),
+      messages: [{ role: 'user', content: [
+        { type: 'image_url', image_url: { url: imageDataUrl } },
+        ...(text ? [{ type: 'text', text }] : []),
+      ]}],
+      temperature: 0.2,
+      max_tokens: 1000,
+    };
+    const probeJson = JSON.stringify(probeBody);
+    const probeB64 = btoa(unescape(encodeURIComponent(probeJson)));
+    const probeSafe = probeB64.replace(/\+/g, '%2B').replace(/\//g, '%2F').replace(/=/g, '%3D');
+    const probeUrl = 'https://xiaomiao-toh.pages.dev/api/vision?d=' + probeSafe;
+    console.log('[VISION]', 'URL=' + probeUrl.length + ' 字符, 图dataURL=' + imageDataUrl.length + ' 字符');
+    if (probeUrl.length > 45000) {
+      throw new Error(`图太大（URL ${Math.round(probeUrl.length/1024)}KB > 45KB），GET 通道发不出去。请换张小的图。`);
+    }
+
     if (useNative) {
       return await this._callVisionNative(text, imageDataUrl);
     } else {
-      return await this._callVisionGet(text, imageDataUrl);
+      return await this._callVisionGet(text, probeUrl);
     }
   },
 
@@ -1735,32 +1754,11 @@ const Assistant = {
   },
 
   /** GET 备用通道（WebView 83 老通道，受 CF URL 50KB 限制） */
-  async _callVisionGet(text, imageDataUrl) {
-    const content = [
-      { type: 'image_url', image_url: { url: imageDataUrl } },
-    ];
-    if (text) content.push({ type: 'text', text });
-    const body = {
-      model: this.VISION_MODEL,
-      system: this.visionSystemPrompt(),
-      messages: [{ role: 'user', content }],
-      temperature: 0.2,
-      max_tokens: 1000,
-    };
-    const jsonBody = JSON.stringify(body);
-    const b64Body = btoa(unescape(encodeURIComponent(jsonBody)));
-    // 紧凑 base64 编码：只转义 +/=，省 30% 长度
-    const safeB64 = b64Body.replace(/\+/g, '%2B').replace(/\//g, '%2F').replace(/=/g, '%3D');
-    const getUrl = 'https://xiaomiao-toh.pages.dev/api/vision?d=' + safeB64;
-
-    if (getUrl.length > 45000) {
-      throw new Error(`图片太大（URL ${Math.round(getUrl.length/1024)}KB）。这台 WebView 太老只能走 GET 通道，最多 45KB。`);
-    }
-
+  async _callVisionGet(text, getUrl) {
     let lastErr;
     for (let attempt = 0; attempt <= 2; attempt++) {
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 25000);
+      const timer = setTimeout(() => ctrl.abort(), 15000);
       try {
         const res = await fetch(getUrl, { method: 'GET', signal: ctrl.signal });
         clearTimeout(timer);
