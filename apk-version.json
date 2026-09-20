@@ -1,7 +1,7 @@
 {
-  "versionCode": 19,
-  "versionName": "2.3.2",
-  "downloadUrl": "https://xiaomiao-toh.pages.dev/apks/xiaomiao-v2.3.2.apk",
-  "changelog": "v2.3.2: ➕ 聊天附件入口改造（+ 按钮 + ActionSheet 三选一：拍照 / 相册 / 文件）｜🆕 新增 CAMERA 权限（仅用于拍照附件，可拒绝，不影响其他功能）",
-  "force": false
+  "versionCode": 21,
+  "versionName": "2.4.5",
+  "downloadUrl": "https://xiaomiao-toh.pages.dev/apks/xiaomiao-v2.4.5.apk",
+  "changelog": "v2.4.5: 🚀 加 NativeUpload 原生插件（Capacitor Java HttpURLConnection，绕开 Android WebView 83 所有 POST 通道 bug，body 无大小限制）｜🖼️ AI 视觉问答不再压缩图片，原画质直发｜🔬 内置桥限制诊断",
+  "force": true
 }
