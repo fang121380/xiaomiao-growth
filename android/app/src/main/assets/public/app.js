@@ -2359,7 +2359,7 @@ const Assistant = {
         model: usedVision ? this.VISION_MODEL : this.TEXT_MODEL,
         messages,
         temperature: 0.2,
-        max_tokens: usedVision ? 1000 : 700,
+        // 不限制 max_tokens——DeepSeek 默认 4096-8192 够 reasoning + content
       },
       maxRetries: 2,
       // 视觉模型推理较慢，给到 25s；文本 20s
