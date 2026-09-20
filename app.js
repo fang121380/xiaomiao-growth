@@ -1692,17 +1692,12 @@ const Assistant = {
       return await this._callVisionNative(text, imageDataUrl);
     }
 
-    // 没原生插件（web 平台），才走 GET 通道。先 downscale 到 ≤1200px q=0.35 确保 URL < 38KB
-    let downscaleDataUrl = imageDataUrl;
-    try {
-      downscaleDataUrl = await this.downscaleImage(imageDataUrl, 1200);
-    } catch (e) { console.warn('[VISION] GET 通道 downscale 失败:', e.message); }
-
+    // 没原生插件（web 平台），才走 GET 通道。预算 GET URL 长度预检：超限直接报错
     const probeBody = {
       model: this.VISION_MODEL,
       system: this.visionSystemPrompt(),
       messages: [{ role: 'user', content: [
-        { type: 'image_url', image_url: { url: downscaleDataUrl } },
+        { type: 'image_url', image_url: { url: imageDataUrl } },
         ...(text ? [{ type: 'text', text }] : []),
       ]}],
       temperature: 0.2,
@@ -1712,26 +1707,9 @@ const Assistant = {
     const probeB64 = btoa(unescape(encodeURIComponent(probeJson)));
     const probeSafe = probeB64.replace(/\+/g, '%2B').replace(/\//g, '%2F').replace(/=/g, '%3D');
     const probeUrl = 'https://xiaomiao-toh.pages.dev/api/vision?d=' + probeSafe;
-    console.log('[VISION] GET 通道 URL=' + probeUrl.length + ' 字符, 图dataURL=' + downscaleDataUrl.length + ' 字符');
-    if (probeUrl.length > 38000) {
-      // 再 downscale 一次到 800px
-      try {
-        const smaller = await this.downscaleImage(downscaleDataUrl, 800);
-        const probeBody2 = { ...probeBody, messages: [{ role: 'user', content: [
-          { type: 'image_url', image_url: { url: smaller } },
-          ...(text ? [{ type: 'text', text }] : []),
-        ]}] };
-        const probeJson2 = JSON.stringify(probeBody2);
-        const probeB642 = btoa(unescape(encodeURIComponent(probeJson2)));
-        const probeSafe2 = probeB642.replace(/\+/g, '%2B').replace(/\//g, '%2F').replace(/=/g, '%3D');
-        const probeUrl2 = 'https://xiaomiao-toh.pages.dev/api/vision?d=' + probeSafe2;
-        if (probeUrl2.length > 38000) {
-          throw new Error('GET 通道图太大（URL ' + Math.round(probeUrl2.length/1024) + 'KB）。请换张更小的图。');
-        }
-        return await this._callVisionGet(text, probeUrl2);
-      } catch (e2) {
-        throw new Error('GET 通道图太大无法发送（' + e2.message + '）。请换张更小的图。');
-      }
+    console.log('[VISION] GET 通道 URL=' + probeUrl.length + ' 字符, 图dataURL=' + imageDataUrl.length + ' 字符');
+    if (probeUrl.length > 45000) {
+      throw new Error(`图太大（URL ${Math.round(probeUrl.length/1024)}KB > 45KB），GET 通道发不出去。请换张小的图。`);
     }
     return await this._callVisionGet(text, probeUrl);
   },
@@ -1862,19 +1840,10 @@ const Assistant = {
     const model = this.VISION_MODEL;
     const system = this.visionSystemPrompt();
 
-    // 关键：在传 NativeUpload 前再压缩一次（≤1200px JPEG 0.5），让 base64 ≤ 200KB
-    // 不然 1600px q=0.82 → ~670KB base64 → 服务端 DeepSeek 处理慢 → 20s 超时
-    let processedDataUrl = imageDataUrl;
-    try {
-      processedDataUrl = await this.downscaleImage(imageDataUrl, 1200);
-    } catch (e) {
-      console.warn('[VISION] _callVisionNative downscale 失败:', e.message);
-    }
-
     // dataURL → base64 字符串 → 通过 NativeUpload 插件发 POST
-    const b64Idx = processedDataUrl.indexOf(',');
-    const mime = ((processedDataUrl.match(/data:([^;]+)/) || [])[1]) || 'image/jpeg';
-    const bodyBase64 = b64Idx >= 0 ? processedDataUrl.slice(b64Idx + 1) : processedDataUrl;
+    const b64Idx = imageDataUrl.indexOf(',');
+    const mime = ((imageDataUrl.match(/data:([^;]+)/) || [])[1]) || 'image/jpeg';
+    const bodyBase64 = b64Idx >= 0 ? imageDataUrl.slice(b64Idx + 1) : imageDataUrl;
 
     // 不限制图片大小——让 DeepSeek 自己判断能不能处理（实测接受到 ~5MB+ JPEG）
     // 只有 WebView 桥的 addJavascriptInterface ~1MB 字符串限制可能限制 base64 传递
@@ -1925,31 +1894,8 @@ const Assistant = {
       const probeSafe = probeB64.replace(/\+/g, '%2B').replace(/\//g, '%2F').replace(/=/g, '%3D');
       const probeUrl = 'https://xiaomiao-toh.pages.dev/api/vision?d=' + probeSafe;
       console.log('[VISION] fallback GET URL=' + probeUrl.length + ' 字符');
-      if (probeUrl.length > 38000) {
-        // 再 downscale 到 800px 兜底
-        try {
-          fallbackDataUrl = await this.downscaleImage(fallbackDataUrl, 800);
-          const probeBody2 = {
-            model: this.VISION_MODEL,
-            system: this.visionSystemPrompt(),
-            messages: [{ role: 'user', content: [
-              { type: 'image_url', image_url: { url: fallbackDataUrl } },
-              ...(text ? [{ type: 'text', text }] : []),
-            ]}],
-            temperature: 0.2,
-            max_tokens: 1000,
-          };
-          const probeJson2 = JSON.stringify(probeBody2);
-          const probeB642 = btoa(unescape(encodeURIComponent(probeJson2)));
-          const probeSafe2 = probeB642.replace(/\+/g, '%2B').replace(/\//g, '%2F').replace(/=/g, '%3D');
-          const probeUrl2 = 'https://xiaomiao-toh.pages.dev/api/vision?d=' + probeSafe2;
-          if (probeUrl2.length > 38000) {
-            throw new Error('原生 POST 失败 + 图太大无法 fallback（URL ' + Math.round(probeUrl2.length/1024) + 'KB）。请换张更小的图。');
-          }
-          return await this._callVisionGet(text, probeUrl2);
-        } catch (e3) {
-          throw new Error('原生 POST 失败 + 图太大无法 fallback。请换张更小的图。');
-        }
+      if (probeUrl.length > 45000) {
+        throw new Error('原生 POST 失败 + 图太大无法 fallback（URL ' + Math.round(probeUrl.length/1024) + 'KB）。请换张更小的图。');
       }
       return await this._callVisionGet(text, probeUrl);
     }
@@ -2032,8 +1978,8 @@ const Assistant = {
         ctx.fillRect(0, 0, cw, ch);
         ctx.drawImage(img, 0, 0, cw, ch);
         try {
-          // q=0.35 激进压缩，确保 1200px JPEG < 15KB（GET fallback URL 一定 < 45KB）
-          resolve(canvas.toDataURL('image/jpeg', 0.35));
+          // q=0.5 足够 AI 看清楚，且 base64 更小（确保 GET fallback URL <45KB）
+          resolve(canvas.toDataURL('image/jpeg', 0.5));
         } catch (e) {
           reject(new Error('canvas.toDataURL 失败'));
         }
