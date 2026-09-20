@@ -45,9 +45,11 @@ public class NativeUploadPlugin extends Plugin {
 
     @PluginMethod
     public void post(final PluginCall call) {
+        android.util.Log.i("NativeUpload", "post() called");
         final String url = call.getString("url");
         final String bodyBase64 = call.getString("bodyBase64");
         final String contentType = call.getString("contentType", "application/octet-stream");
+        android.util.Log.i("NativeUpload", "post() parsed url=" + (url != null ? url.substring(0, Math.min(60, url.length())) : "null") + " bodyBase64.len=" + (bodyBase64 != null ? bodyBase64.length() : "null") + " echoOnly=" + call.getString("echoOnly"));
 
         if (url == null || bodyBase64 == null) {
             call.reject("url 和 bodyBase64 必填");

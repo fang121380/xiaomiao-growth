@@ -1840,10 +1840,19 @@ const Assistant = {
     const model = this.VISION_MODEL;
     const system = this.visionSystemPrompt();
 
+    // 关键：在传 NativeUpload 前再压缩一次（≤1200px JPEG 0.5），让 base64 ≤ 200KB
+    // 不然 1600px q=0.82 → ~670KB base64 → 服务端 DeepSeek 处理慢 → 20s 超时
+    let processedDataUrl = imageDataUrl;
+    try {
+      processedDataUrl = await this.downscaleImage(imageDataUrl, 1200);
+    } catch (e) {
+      console.warn('[VISION] _callVisionNative downscale 失败:', e.message);
+    }
+
     // dataURL → base64 字符串 → 通过 NativeUpload 插件发 POST
-    const b64Idx = imageDataUrl.indexOf(',');
-    const mime = ((imageDataUrl.match(/data:([^;]+)/) || [])[1]) || 'image/jpeg';
-    const bodyBase64 = b64Idx >= 0 ? imageDataUrl.slice(b64Idx + 1) : imageDataUrl;
+    const b64Idx = processedDataUrl.indexOf(',');
+    const mime = ((processedDataUrl.match(/data:([^;]+)/) || [])[1]) || 'image/jpeg';
+    const bodyBase64 = b64Idx >= 0 ? processedDataUrl.slice(b64Idx + 1) : processedDataUrl;
 
     // 不限制图片大小——让 DeepSeek 自己判断能不能处理（实测接受到 ~5MB+ JPEG）
     // 只有 WebView 桥的 addJavascriptInterface ~1MB 字符串限制可能限制 base64 传递
