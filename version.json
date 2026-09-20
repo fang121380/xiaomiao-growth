@@ -1,8 +1,8 @@
 {
-  "build": 36,
-  "version": "v2.3.22",
+  "build": 37,
+  "version": "v2.3.23",
   "released": "2026-09-20",
-  "changelog": "🐛 视觉问答：多张图（≤4）用 canvas 拼成 2x2 网格单图，单图 GET+base64 一次发，AI 给一条综合回复",
+  "changelog": "🔍 诊断模式：callVision 错误信息带 [err.name] / [诊断] 前缀；canvas 拼接错误带 Image.onerror / FileReader 原因；console.log VISION-DIAG 每次请求详情",
   "force": false,
   "min_supported_build": 4
 }

@@ -3,7 +3,7 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.3.22';
+const APP_VERSION = 'v2.3.23';
 const APK_VERSION_CODE = 19;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
@@ -1689,6 +1689,14 @@ const Assistant = {
       try {
         const res = await fetch(getUrl, { method: 'GET', signal: ctrl.signal });
         clearTimeout(timer);
+        // 诊断：记下每次请求的结果
+        console.log('[VISION-DIAG]', JSON.stringify({
+          attempt: attempt + 1,
+          urlLen: getUrl.length,
+          status: res.status,
+          ok: res.ok,
+          contentType: res.headers.get('content-type'),
+        }));
         if (res.ok) {
           const data = await res.json();
           const reply = data.choices?.[0]?.message?.content;
@@ -1705,6 +1713,14 @@ const Assistant = {
         throw lastErr;
       } catch (err) {
         clearTimeout(timer);
+        // 详细诊断日志
+        console.error('[VISION-DIAG]', JSON.stringify({
+          attempt: attempt + 1,
+          urlLen: getUrl.length,
+          errName: err.name,
+          errMsg: err.message,
+          errStack: (err.stack || '').slice(0, 300),
+        }));
         lastErr = err;
         const isNetworkish = err.name === 'AbortError' ||
                              err.message.startsWith('Failed to fetch') ||
@@ -1715,7 +1731,8 @@ const Assistant = {
         }
         if (err.name === 'AbortError') throw new Error('请求超时（>25秒）');
         if (err.message.startsWith('API') || err.message === '返回为空') throw err;
-        throw new Error(`网络开了小差：${err.message}`);
+        // 错误信息加上诊断上下文，让用户能看到真实原因
+        throw new Error(`网络开了小差：[err.name=${err.name || 'N/A'}] ${err.message || '(无 message)'}\n[诊断] URL=${getUrl.length} 字符`);
       }
     }
     throw lastErr;
@@ -1729,13 +1746,14 @@ const Assistant = {
    */
   _mergeImagesToGrid(dataUrls) {
     return new Promise((resolve, reject) => {
-      const imgs = dataUrls.map(u => {
+      const imgs = dataUrls.map((u, i) => {
         const img = new Image();
+        img.onerror = (ev) => reject(new Error(`第 ${i+1} 张图加载失败 (Image.onerror type=${ev?.type || 'unknown'})`));
         img.src = u;
         return img;
       });
       Promise.all(imgs.map(i => new Promise((r, rj) => {
-        i.onload = r; i.onerror = rj;
+        i.onload = r; i.onerror = (ev) => rj(new Error(`Image.onerror type=${ev?.type || 'unknown'}`));
       }))).then(() => {
         const TILE = 200;
         const cols = imgs.length === 1 ? 1 : 2;
@@ -1744,6 +1762,7 @@ const Assistant = {
         canvas.width = TILE * cols;
         canvas.height = TILE * rows;
         const ctx = canvas.getContext('2d');
+        if (!ctx) return reject(new Error('canvas.getContext("2d") 失败（WebView 不支持？）'));
         ctx.fillStyle = '#fff';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         imgs.forEach((img, i) => {
@@ -1755,13 +1774,13 @@ const Assistant = {
           ctx.drawImage(img, x + (TILE - w) / 2, y + (TILE - h) / 2, w, h);
         });
         canvas.toBlob(b => {
-          if (!b) return reject(new Error('canvas.toBlob 失败'));
+          if (!b) return reject(new Error('canvas.toBlob 返回 null'));
           const reader = new FileReader();
           reader.onload = () => resolve(reader.result);
-          reader.onerror = () => reject(new Error('FileReader 失败'));
+          reader.onerror = (ev) => reject(new Error(`FileReader.onerror type=${ev?.type || 'unknown'}`));
           reader.readAsDataURL(b);
         }, 'image/jpeg', 0.5);
-      }).catch(reject);
+      }).catch(err => reject(err instanceof Error ? err : new Error(String(err) || '未知错误')));
     });
   },
 
@@ -3737,7 +3756,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 36;  // 与 www/version.json 同步（APK 包内的基线版本）
+const LOCAL_BUILD = 37;  // 与 www/version.json 同步（APK 包内的基线版本）
 const LS_DISMISSED_BUILD = 'xiaomiao.lastDismissedBuild';  // 用户上次"确认/关闭"的 build
 let remoteUpdateInfo = null;
 
