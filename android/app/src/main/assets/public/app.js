@@ -3,7 +3,7 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.3.20';
+const APP_VERSION = 'v2.3.22';
 const APK_VERSION_CODE = 19;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
@@ -1610,7 +1610,7 @@ const Assistant = {
     // 现在走 XHR POST form-urlencoded 不再受 CF URL 长度限制，可以恢复原画质
     toProcess.forEach(async (file, i) => {
       try {
-        const blob = await compressImage(file, 300, 0.2);
+        const blob = await compressImage(file, 400, 0.4);
         const compressedDataUrl = await new Promise((res, rej) => {
           const r = new FileReader();
           r.onload = () => res(r.result);
@@ -1651,15 +1651,20 @@ const Assistant = {
    * - 图片已在 onAttachImage 压缩到 400px JPEG 0.3（base64 ~5-15KB，URL <50KB）
    */
   async callVision(text, images) {
-    // WebView 83 实测踩坑：所有 POST 都 "Failed to fetch"（fetch/XHR 都挂）。
-    // 唯一稳定的通道是 GET（文字聊天一直走的就是 GET）。
-    // GET 限制：CF URL 上限 50KB，所以图必须压到能塞下。
-    // 当前压缩：300x300 JPEG 0.2（onAttachImage 里），dataURL 通常 3-10KB，URL <25KB。
-    const content = [];
-    if (text) content.push({ type: 'text', text });
-    for (const url of images) {
-      content.push({ type: 'image_url', image_url: { url } });
+    // WebView 83 实测踩坑：所有 POST 都 "Failed to fetch"。
+    // 唯一稳定通道是 GET（CF URL 上限 50KB）。
+    // 多张图：客户端用 canvas 拼成 2×2 网格单图，单图 GET+base64 一次发，
+    // AI 看拼图给一条综合回复。
+    let imageDataUrl;
+    if (images.length === 1) {
+      imageDataUrl = images[0];
+    } else {
+      imageDataUrl = await this._mergeImagesToGrid(images);
     }
+    const content = [
+      { type: 'image_url', image_url: { url: imageDataUrl } },
+    ];
+    if (text) content.push({ type: 'text', text });
     const body = {
       model: this.VISION_MODEL,
       system: this.visionSystemPrompt(),
@@ -1674,7 +1679,7 @@ const Assistant = {
     const getUrl = 'https://xiaomiao-toh.pages.dev/api/vision?d=' + safeB64;
 
     if (getUrl.length > 45000) {
-      throw new Error(`图片太大（URL ${Math.round(getUrl.length/1024)}KB）。这台 WebView 太老只能走 GET 通道，最多 45KB。升级 Android System WebView 或重打 APK 才能发原图。`);
+      throw new Error(`图片太大（URL ${Math.round(getUrl.length/1024)}KB）。这台 WebView 太老只能走 GET 通道，最多 45KB。`);
     }
 
     let lastErr;
@@ -1714,6 +1719,50 @@ const Assistant = {
       }
     }
     throw lastErr;
+  },
+
+  /**
+   * 多张图拼成 2×2 网格单图（Canvas API）
+   * - 每格 200x200，最多 4 张拼成 400x400 单图
+   * - 压缩到 JPEG 0.5，单图 dataURL <50KB
+   * - AI 看拼图自然综合分析，给一条回复
+   */
+  _mergeImagesToGrid(dataUrls) {
+    return new Promise((resolve, reject) => {
+      const imgs = dataUrls.map(u => {
+        const img = new Image();
+        img.src = u;
+        return img;
+      });
+      Promise.all(imgs.map(i => new Promise((r, rj) => {
+        i.onload = r; i.onerror = rj;
+      }))).then(() => {
+        const TILE = 200;
+        const cols = imgs.length === 1 ? 1 : 2;
+        const rows = Math.ceil(imgs.length / cols);
+        const canvas = document.createElement('canvas');
+        canvas.width = TILE * cols;
+        canvas.height = TILE * rows;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        imgs.forEach((img, i) => {
+          const x = (i % cols) * TILE;
+          const y = Math.floor(i / cols) * TILE;
+          const scale = Math.max(TILE / img.width, TILE / img.height);
+          const w = img.width * scale;
+          const h = img.height * scale;
+          ctx.drawImage(img, x + (TILE - w) / 2, y + (TILE - h) / 2, w, h);
+        });
+        canvas.toBlob(b => {
+          if (!b) return reject(new Error('canvas.toBlob 失败'));
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error('FileReader 失败'));
+          reader.readAsDataURL(b);
+        }, 'image/jpeg', 0.5);
+      }).catch(reject);
+    });
   },
 
   /**
@@ -1938,33 +1987,9 @@ const Assistant = {
 
     try {
       if (usedVision) {
-        // 多张图：循环每张发一次 GET+base64（单图 URL <50KB 不超限），每个回复独立一个 bubble
-        if (images.length === 1) {
-          const reply = await this.callVision(text, images);
-          this.history[bubbleIdx] = { role: 'assistant', content: reply, usedVision: true };
-        } else {
-          // 第一张图用现有的占位 bubble（已经在 streaming 状态）
-          const firstReply = await this.callVision(text, [images[0]]);
-          this.history[bubbleIdx] = { role: 'assistant', content: firstReply, usedVision: true };
-          this.renderMessages();
-          // 后续每张图单独 push 一个 bubble（串行，避免并发请求互相阻塞 WebView）
-          for (let i = 1; i < images.length; i++) {
-            const idx = this.history.length;
-            this.history.push({ role: 'assistant', content: '', streaming: true, isVision: true, usedVision: true });
-            this.renderMessages();
-            try {
-              const reply = await this.callVision(text, [images[i]]);
-              this.history[idx] = { role: 'assistant', content: reply, usedVision: true };
-            } catch (imgErr) {
-              this.history[idx] = {
-                role: 'assistant',
-                content: `抱歉，分析第 ${i+1} 张图时连不上 AI 😿\n错误：${imgErr.message}`,
-                usedVision: false,
-              };
-            }
-            this.renderMessages();
-          }
-        }
+        // callVision 内部处理多张图：canvas 拼成 2x2 网格单图，单图 GET+base64 一次发，AI 给一条综合回复
+        const reply = await this.callVision(text, images);
+        this.history[bubbleIdx] = { role: 'assistant', content: reply, usedVision: true };
       } else {
         const isUrgent = this.detectUrgent(text);
         // 暂用非流式路径（WebView 83 + 流式兼容性有问题；先让 AI 稳定可用）
@@ -3712,7 +3737,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 34;  // 与 www/version.json 同步（APK 包内的基线版本）
+const LOCAL_BUILD = 36;  // 与 www/version.json 同步（APK 包内的基线版本）
 const LS_DISMISSED_BUILD = 'xiaomiao.lastDismissedBuild';  // 用户上次"确认/关闭"的 build
 let remoteUpdateInfo = null;
 

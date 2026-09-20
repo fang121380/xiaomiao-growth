@@ -1,8 +1,8 @@
 {
-  "build": 34,
-  "version": "v2.3.20",
-  "released": "2026-09-18",
-  "changelog": "🐛 视觉问答：AI 聊天一次只能发 1 张图（GET+base64 URL 限制）；多张选 1 弹提示",
+  "build": 36,
+  "version": "v2.3.22",
+  "released": "2026-09-20",
+  "changelog": "🐛 视觉问答：多张图（≤4）用 canvas 拼成 2x2 网格单图，单图 GET+base64 一次发，AI 给一条综合回复",
   "force": false,
   "min_supported_build": 4
 }
