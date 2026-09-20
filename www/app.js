@@ -3977,6 +3977,29 @@ function refreshAboutVerStatus() {
 }
 
 async function boot() {
+  // v2.4.6+: 强制清缓存 + unregister SW（用户真机 SW 没及时自杀导致卡旧 JS）
+  // 不依赖 SW 自己的 install/activate 时机
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (const r of regs) { try { await r.unregister(); } catch {} }
+    }
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      for (const k of keys) { try { await caches.delete(k); } catch {} }
+    }
+    // 如果标记的 build 与当前 build 不一致（说明 SW 之前缓存了旧版），强制 reload
+    const marked = localStorage.getItem('xiaomiao.boot.build');
+    if (marked && marked !== String(LOCAL_BUILD)) {
+      localStorage.setItem('xiaomiao.boot.build', String(LOCAL_BUILD));
+      location.replace(location.href.split('#')[0] + '?_=' + Date.now());
+      return;
+    }
+    localStorage.setItem('xiaomiao.boot.build', String(LOCAL_BUILD));
+  } catch (e) {
+    console.warn('[BOOT] SW/cache cleanup failed:', e);
+  }
+
   // 清理旧 SW 缓存（必要时 reload 一次）
   const cleaned = await cleanupLegacySW();
   if (cleaned) {
