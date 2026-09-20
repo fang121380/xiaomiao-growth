@@ -42,13 +42,15 @@ public class MainActivity extends BridgeActivity {
   /**
    * 注册 Capacitor 自定义插件（NativeUpload：走原生 HttpURLConnection，
    * 绕开 Android WebView 83 上所有 POST 通道 bug）
-   * 注意：必须在 super.onCreate() 之后调用，否则 Capacitor 桥未就绪
+   * 注意：必须在 super.onCreate() **之前**调用！bridgeBuilder 在 super.onCreate 时
+   * 才初始化，所以 addPlugin 必须提前。
+   * 验证：logcat -s NativeUpload:I 应看到 "Plugin registered"
    */
   @Override
   public void onCreate(android.os.Bundle savedInstanceState) {
-    super.onCreate(savedInstanceState);
     registerPlugin(NativeUploadPlugin.class);
     android.util.Log.i("NativeUpload", "Plugin registered");
+    super.onCreate(savedInstanceState);
   }
 
   @Override
