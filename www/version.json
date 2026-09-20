@@ -1,8 +1,8 @@
 {
-  "build": 42,
-  "version": "v2.4.3",
+  "build": 43,
+  "version": "v2.4.4",
   "released": "2026-09-20",
-  "changelog": "🛡️ 全量审查修复：1) NativeUpload 失败时真正降级到 GET（之前 catch 直接抛错），2) 服务端加 5MB body 上限（防 OOM）",
+  "changelog": "🆓 去掉所有图片大小限制：JS 端无 800KB 检查，服务端上限 5MB→30MB。DeepSeek 实测接受到 5MB+ JPEG，由它自己判断。",
   "force": true,
   "min_supported_build": 4
 }

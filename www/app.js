@@ -3,7 +3,7 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.4.3';
+const APP_VERSION = 'v2.4.4';
 const APK_VERSION_CODE = 20;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
@@ -1717,12 +1717,9 @@ const Assistant = {
     const mime = ((imageDataUrl.match(/data:([^;]+)/) || [])[1]) || 'image/jpeg';
     const bodyBase64 = b64Idx >= 0 ? imageDataUrl.slice(b64Idx + 1) : imageDataUrl;
 
-    // DeepSeek 上游对单图有限制（约 1MB JPEG / ~1.3MB base64）。提前预检避免发过去才 400
-    // 保守上限：800KB base64 ≈ 600KB JPEG，足够 AI 看清，又留余量给 system prompt + text
-    const MAX_B64 = 800 * 1024;
-    if (bodyBase64.length > MAX_B64) {
-      throw new Error(`图太大（${Math.round(bodyBase64.length/1024)}KB > 800KB）。DeepSeek 单图上限约 1MB。请换张小的图。`);
-    }
+    // 不限制图片大小——让 DeepSeek 自己判断能不能处理（实测接受到 ~5MB+ JPEG）
+    // 只有 WebView 桥的 addJavascriptInterface ~1MB 字符串限制可能限制 base64 传递
+    // 服务端会做合理的大小检查（保护 CF Worker 内存）
 
     const qs = new URLSearchParams({
       model,
@@ -3854,7 +3851,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 42;  // 与 www/version.json 同步（APK 包内的基线版本）
+const LOCAL_BUILD = 43;  // 与 www/version.json 同步（APK 包内的基线版本）
 const LS_DISMISSED_BUILD = 'xiaomiao.lastDismissedBuild';  // 用户上次"确认/关闭"的 build
 let remoteUpdateInfo = null;
 
