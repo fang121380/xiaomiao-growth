@@ -1689,14 +1689,6 @@ const Assistant = {
       try {
         const res = await fetch(getUrl, { method: 'GET', signal: ctrl.signal });
         clearTimeout(timer);
-        // 诊断：记下每次请求的结果
-        console.log('[VISION-DIAG]', JSON.stringify({
-          attempt: attempt + 1,
-          urlLen: getUrl.length,
-          status: res.status,
-          ok: res.ok,
-          contentType: res.headers.get('content-type'),
-        }));
         if (res.ok) {
           const data = await res.json();
           const reply = data.choices?.[0]?.message?.content;
@@ -1713,14 +1705,6 @@ const Assistant = {
         throw lastErr;
       } catch (err) {
         clearTimeout(timer);
-        // 详细诊断日志
-        console.error('[VISION-DIAG]', JSON.stringify({
-          attempt: attempt + 1,
-          urlLen: getUrl.length,
-          errName: err.name,
-          errMsg: err.message,
-          errStack: (err.stack || '').slice(0, 300),
-        }));
         lastErr = err;
         const isNetworkish = err.name === 'AbortError' ||
                              err.message.startsWith('Failed to fetch') ||
@@ -1731,8 +1715,7 @@ const Assistant = {
         }
         if (err.name === 'AbortError') throw new Error('请求超时（>25秒）');
         if (err.message.startsWith('API') || err.message === '返回为空') throw err;
-        // 错误信息加上诊断上下文，让用户能看到真实原因
-        throw new Error(`网络开了小差：[err.name=${err.name || 'N/A'}] ${err.message || '(无 message)'}\n[诊断] URL=${getUrl.length} 字符`);
+        throw new Error(`网络开了小差：${err.message}`);
       }
     }
     throw lastErr;

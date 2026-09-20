@@ -1,8 +1,8 @@
 {
-  "build": 37,
-  "version": "v2.3.23",
+  "build": 38,
+  "version": "v2.3.24",
   "released": "2026-09-20",
-  "changelog": "🔍 诊断模式：callVision 错误信息带 [err.name] / [诊断] 前缀；canvas 拼接错误带 Image.onerror / FileReader 原因；console.log VISION-DIAG 每次请求详情",
+  "changelog": "回退 v2.3.23 诊断版（导致 app 打不开），回到 v2.3.22 多图 canvas 拼接 + 综合回复",
   "force": false,
   "min_supported_build": 4
 }
