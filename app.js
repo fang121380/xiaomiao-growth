@@ -1717,6 +1717,13 @@ const Assistant = {
     const mime = ((imageDataUrl.match(/data:([^;]+)/) || [])[1]) || 'image/jpeg';
     const bodyBase64 = b64Idx >= 0 ? imageDataUrl.slice(b64Idx + 1) : imageDataUrl;
 
+    // DeepSeek 上游对单图有限制（约 1MB JPEG / ~1.3MB base64）。提前预检避免发过去才 400
+    // 保守上限：800KB base64 ≈ 600KB JPEG，足够 AI 看清，又留余量给 system prompt + text
+    const MAX_B64 = 800 * 1024;
+    if (bodyBase64.length > MAX_B64) {
+      throw new Error(`图太大（${Math.round(bodyBase64.length/1024)}KB > 800KB）。DeepSeek 单图上限约 1MB。请换张小的图。`);
+    }
+
     const qs = new URLSearchParams({
       model,
       system,
