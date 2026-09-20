@@ -3,7 +3,7 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.4.2';
+const APP_VERSION = 'v2.4.3';
 const APK_VERSION_CODE = 20;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
@@ -1665,7 +1665,12 @@ const Assistant = {
       imageDataUrl = await this._mergeImagesToGrid(images);
     }
 
-    // GET 通道 URL 长度预检：超限直接报清晰错误，不浪费等件起 25s×3 次请求
+    // NativeUpload 优先（POST，无 URL 长度限制）—— _callVisionNative 失败时会自动降级到 GET
+    if (useNative) {
+      return await this._callVisionNative(text, imageDataUrl);
+    }
+
+    // 没原生插件（web 平台），才走 GET 通道。预算 GET URL 长度预检：超限直接报错
     const probeBody = {
       model: this.VISION_MODEL,
       system: this.visionSystemPrompt(),
@@ -1680,14 +1685,7 @@ const Assistant = {
     const probeB64 = btoa(unescape(encodeURIComponent(probeJson)));
     const probeSafe = probeB64.replace(/\+/g, '%2B').replace(/\//g, '%2F').replace(/=/g, '%3D');
     const probeUrl = 'https://xiaomiao-toh.pages.dev/api/vision?d=' + probeSafe;
-    console.log('[VISION]', 'URL=' + probeUrl.length + ' 字符, 图dataURL=' + imageDataUrl.length + ' 字符');
-    // 优先级必须是 NativeUpload 优先！否则大图永远走不到原生通道
-    if (useNative) {
-      // NativeUpload 用原生 POST，无 URL 长度限制
-      return await this._callVisionNative(text, imageDataUrl);
-    }
-
-    // 没有 NativeUpload 插件（web 平台），才检查 GET URL 长度
+    console.log('[VISION] GET 通道 URL=' + probeUrl.length + ' 字符, 图dataURL=' + imageDataUrl.length + ' 字符');
     if (probeUrl.length > 45000) {
       throw new Error(`图太大（URL ${Math.round(probeUrl.length/1024)}KB > 45KB），GET 通道发不出去。请换张小的图。`);
     }
@@ -1747,10 +1745,29 @@ const Assistant = {
         Capacitor.Plugins.NativeUpload.post({ url, bodyBase64, contentType: mime }),
         timeoutPromise,
       ]);
-    } catch (e) {
-      console.error('[VISION] 原生 POST 失败，降级 GET:', e.message);
-      // 降级：把图片压小再走 GET 备用通道
-      throw new Error('原生 POST 失败：' + e.message + '。请用 GET 通道但当前图太大，请换张小的。');
+    } catch (nativeErr) {
+      console.error('[VISION] 原生 POST 失败，尝试降级 GET:', nativeErr.message);
+      // 真降级：把图片压小后走 GET（前提是 URL 长度允许）
+      // 重算 image dataURL 的 GET URL 长度
+      const probeBody = {
+        model: this.VISION_MODEL,
+        system: this.visionSystemPrompt(),
+        messages: [{ role: 'user', content: [
+          { type: 'image_url', image_url: { url: imageDataUrl } },
+          ...(text ? [{ type: 'text', text }] : []),
+        ]}],
+        temperature: 0.2,
+        max_tokens: 1000,
+      };
+      const probeJson = JSON.stringify(probeBody);
+      const probeB64 = btoa(unescape(encodeURIComponent(probeJson)));
+      const probeSafe = probeB64.replace(/\+/g, '%2B').replace(/\//g, '%2F').replace(/=/g, '%3D');
+      const probeUrl = 'https://xiaomiao-toh.pages.dev/api/vision?d=' + probeSafe;
+      if (probeUrl.length > 45000) {
+        throw new Error('原生 POST 失败：' + nativeErr.message + '。当前图太大，GET 通道也发不出去（URL ' + Math.round(probeUrl.length/1024) + 'KB）。请换张小的图。');
+      }
+      // 走 GET fallback
+      return await this._callVisionGet(text, probeUrl);
     }
     if (!result || !result.body) throw new Error('空响应');
     let data;
@@ -3837,7 +3854,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 41;  // 与 www/version.json 同步（APK 包内的基线版本）
+const LOCAL_BUILD = 42;  // 与 www/version.json 同步（APK 包内的基线版本）
 const LS_DISMISSED_BUILD = 'xiaomiao.lastDismissedBuild';  // 用户上次"确认/关闭"的 build
 let remoteUpdateInfo = null;
 

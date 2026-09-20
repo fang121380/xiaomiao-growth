@@ -60,6 +60,10 @@ async function handlePost(context) {
       if (!arrayBuffer || arrayBuffer.byteLength === 0) {
         return jsonError(400, 'body 为空');
       }
+      // 防御：CF Worker 单次 128MB 内存上限，超大 body 提前报错避免 OOM
+      if (arrayBuffer.byteLength > 5 * 1024 * 1024) {
+        return jsonError(413, `body 太大（${Math.round(arrayBuffer.byteLength/1024/1024)}MB > 5MB），DeepSeek 单图上限约 1MB`);
+      }
       const bytes = new Uint8Array(arrayBuffer);
       let bin = '';
       const chunk = 0x8000;

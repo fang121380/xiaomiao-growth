@@ -1,8 +1,8 @@
 {
-  "build": 41,
-  "version": "v2.4.2",
+  "build": 42,
+  "version": "v2.4.3",
   "released": "2026-09-20",
-  "changelog": "🐛 修了路由逻辑：先尝试 NativeUpload（POST 无限制），只有 fallback GET 时才检查 URL 长度。大图之前早先走到 GET 才报错，原生通道根本未试。",
+  "changelog": "🛡️ 全量审查修复：1) NativeUpload 失败时真正降级到 GET（之前 catch 直接抛错），2) 服务端加 5MB body 上限（防 OOM）",
   "force": true,
   "min_supported_build": 4
 }
