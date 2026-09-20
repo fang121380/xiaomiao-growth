@@ -3,7 +3,7 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.4.1';
+const APP_VERSION = 'v2.4.2';
 const APK_VERSION_CODE = 20;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
@@ -1681,15 +1681,17 @@ const Assistant = {
     const probeSafe = probeB64.replace(/\+/g, '%2B').replace(/\//g, '%2F').replace(/=/g, '%3D');
     const probeUrl = 'https://xiaomiao-toh.pages.dev/api/vision?d=' + probeSafe;
     console.log('[VISION]', 'URL=' + probeUrl.length + ' 字符, 图dataURL=' + imageDataUrl.length + ' 字符');
+    // 优先级必须是 NativeUpload 优先！否则大图永远走不到原生通道
+    if (useNative) {
+      // NativeUpload 用原生 POST，无 URL 长度限制
+      return await this._callVisionNative(text, imageDataUrl);
+    }
+
+    // 没有 NativeUpload 插件（web 平台），才检查 GET URL 长度
     if (probeUrl.length > 45000) {
       throw new Error(`图太大（URL ${Math.round(probeUrl.length/1024)}KB > 45KB），GET 通道发不出去。请换张小的图。`);
     }
-
-    if (useNative) {
-      return await this._callVisionNative(text, imageDataUrl);
-    } else {
-      return await this._callVisionGet(text, probeUrl);
-    }
+    return await this._callVisionGet(text, probeUrl);
   },
 
   /** 检测 NativeUpload 原生插件是否可用 */
@@ -3835,7 +3837,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 40;  // 与 www/version.json 同步（APK 包内的基线版本）
+const LOCAL_BUILD = 41;  // 与 www/version.json 同步（APK 包内的基线版本）
 const LS_DISMISSED_BUILD = 'xiaomiao.lastDismissedBuild';  // 用户上次"确认/关闭"的 build
 let remoteUpdateInfo = null;
 
