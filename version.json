@@ -2,7 +2,7 @@
   "build": 44,
   "version": "v2.4.5",
   "released": "2026-09-20",
-  "changelog": "🆓 完全去掉图片大小限制：AI 聊天选图不再压缩，原图直接发。NativeUpload POST 无大小限制。",
+  "changelog": "🔬 内置桥限制诊断（首次调用缓存到 window.__bridgeDiagnostic）；v2.4.5 原图发送：AI 聊天不压缩，NativeUpload POST 无大小限制",
   "force": true,
   "min_supported_build": 4
 }

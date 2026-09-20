@@ -28,6 +28,11 @@ import java.net.URL;
  *
  * 方法：
  *   post({url, bodyBase64, contentType}) → {status, body}
+ *
+ * 诊断模式（v2.4.5+）：
+ *   post({echoOnly: '1', bodyBase64: 'A'.repeat(N), url: 'https://x'}) → {receivedLength, decodedLength}
+ *   用于探测 Capacitor 桥（WebMessageListener / @JavascriptInterface）对大字符串的处理上限。
+ *   不做实际网络请求，直接返回 JS 看到的字符串长度 + Java 解码后的字节数。
  */
 @CapacitorPlugin(name = "NativeUpload")
 public class NativeUploadPlugin extends Plugin {
@@ -46,6 +51,38 @@ public class NativeUploadPlugin extends Plugin {
 
         if (url == null || bodyBase64 == null) {
             call.reject("url 和 bodyBase64 必填");
+            return;
+        }
+
+        // ===== 诊断模式：只回显收到的字符串长度，不发 HTTP 请求 =====
+        // 用于探测 Capacitor 桥（WebMessageListener / addJavascriptInterface）能传多大字符串。
+        if (call.getString("echoOnly") != null) {
+            int receivedLength = bodyBase64.length();
+            int decodedLength;
+            String decodeError = null;
+            try {
+                byte[] bodyBytes = android.util.Base64.decode(bodyBase64, android.util.Base64.DEFAULT);
+                decodedLength = bodyBytes.length;
+            } catch (Exception e) {
+                decodedLength = -1;
+                decodeError = e.getClass().getSimpleName() + ": " + e.getMessage();
+                android.util.Log.e("NativeUpload", "诊断模式 Base64 解码失败 receivedLength=" + receivedLength, e);
+            }
+            android.util.Log.i("NativeUpload",
+                "DIAG echoOnly: url=" + url
+                + " receivedLength=" + receivedLength
+                + " decodedLength=" + decodedLength
+                + (decodeError != null ? " decodeError=" + decodeError : ""));
+
+            JSObject ret = new JSObject();
+            ret.put("status", 200);
+            ret.put("body", "ok");
+            ret.put("contentType", "text/plain");
+            ret.put("receivedLength", receivedLength);
+            ret.put("decodedLength", decodedLength);
+            ret.put("echoOnly", true);
+            if (decodeError != null) ret.put("decodeError", decodeError);
+            call.resolve(ret);
             return;
         }
 

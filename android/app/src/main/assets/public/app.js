@@ -4,7 +4,7 @@
  * ==================================================================== */
 
 const APP_VERSION = 'v2.4.5';
-const APK_VERSION_CODE = 20;  // 与 android/app/build.gradle 的 versionCode 同步
+const APK_VERSION_CODE = 21;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
 const LS_LAST_SEEN_VERSION  = 'xiaomiao.lastSeenVersion';     // e.g. 'v2.2.7'
@@ -1651,6 +1651,13 @@ const Assistant = {
    * - 图片已在 onAttachImage 压缩到 400px JPEG 0.3（base64 ~5-15KB，URL <50KB）
    */
   async callVision(text, images) {
+    // ===== 诊断模式 v2.4.5+: 首次调 callVision 时探测 Capacitor 桥字符串上限 =====
+    // 在 window.__bridgeDiagnostic 暴露结果，inspect console / chrome devtools 即可看到
+    // 结果缓存：window.__bridgeDiagnostic.done=true 后跳过
+    if (!window.__bridgeDiagnostic || !window.__bridgeDiagnostic.done) {
+      this._diagnoseBridgeLimit().catch(e => console.warn('[DIAG]', e.message));
+    }
+
     // 主通道：原生 POST（Capacitor NativeUpload 插件 + Java HttpURLConnection）
     //   完全绕开 WebView 83 的所有 POST bug；body 无大小限制；可发完整画质图
     // 备用通道：GET+base64（v2.3.18 之前的方案，老 WebView 上唯一能用）
@@ -1690,6 +1697,112 @@ const Assistant = {
       throw new Error(`图太大（URL ${Math.round(probeUrl.length/1024)}KB > 45KB），GET 通道发不出去。请换张小的图。`);
     }
     return await this._callVisionGet(text, probeUrl);
+  },
+
+  /**
+   * 诊断模式 v2.4.5+: 探测 Capacitor 桥（WebMessageListener / @JavascriptInterface）的字符串上限
+   *
+   * 工作原理：
+   *   - 用 'A'.repeat(N) 构造 N 字符的 base64 字符串（单字符，无 JSON 转义问题）
+   *   - 通过 NativeUpload.post({echoOnly: '1', bodyBase64: 'A'.repeat(N), url: 'x'}) 发给 Java
+   *   - Java 端会回传 receivedLength（JS 发送长度）和 decodedLength（Base64 解码后字节数）
+   *   - 如果 receivedLength < N：桥被截断
+   *   - 如果 resolved 被 reject：桥抛错（超限 / JSON parse 失败）
+   *
+   * 结果存在 window.__bridgeDiagnostic，包含 6 个 size 的 outcome
+   *
+   * 探测大小：100KB / 500KB / 1MB / 2MB / 4MB / 8MB
+   * 注：JSON 序列化会把字符串再包一层（plugin + method + options），所以 JS 看到的字符串大小 ≠ IPC 包大小
+   */
+  async _diagnoseBridgeLimit() {
+    // 只在原生环境跑（web 平台 Capacitor.Plugins.NativeUpload 不存在）
+    const available = await this._isNativeUploadAvailable();
+    if (!available) {
+      console.log('[DIAG] 跳过桥上限探测：NativeUpload 不可用');
+      window.__bridgeDiagnostic = { skipped: true, reason: 'native plugin unavailable' };
+      return;
+    }
+
+    // 同一会话内只跑一次（探测会拉高首图延迟，避免重复）
+    if (window.__bridgeDiagnostic && window.__bridgeDiagnostic.done) {
+      return;
+    }
+
+    const sizes = [
+      { label: '100KB', chars: 100 * 1024 },
+      { label: '500KB', chars: 500 * 1024 },
+      { label: '1MB',   chars: 1024 * 1024 },
+      { label: '2MB',   chars: 2 * 1024 * 1024 },
+      { label: '4MB',   chars: 4 * 1024 * 1024 },
+      { label: '8MB',   chars: 8 * 1024 * 1024 },
+    ];
+
+    const results = [];
+    for (const s of sizes) {
+      const t0 = Date.now();
+      try {
+        const payload = 'A'.repeat(s.chars);
+        const r = await Promise.race([
+          Capacitor.Plugins.NativeUpload.post({
+            url: 'https://test/diag',
+            bodyBase64: payload,
+            echoOnly: '1',
+          }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('plugin timeout 15s')), 15000)),
+        ]);
+        const dt = Date.now() - t0;
+        const truncated = r.receivedLength !== undefined && r.receivedLength !== s.chars;
+        const entry = {
+          label: s.label,
+          sent: s.chars,
+          receivedLength: r.receivedLength,
+          decodedLength: r.decodedLength,
+          truncated,
+          elapsedMs: dt,
+          status: r.status,
+        };
+        results.push(entry);
+        console.log('[DIAG]', s.label,
+          'sent=' + s.chars,
+          'received=' + r.receivedLength,
+          'decoded=' + r.decodedLength,
+          truncated ? '** TRUNCATED **' : 'OK',
+          '(' + dt + 'ms)');
+      } catch (err) {
+        const dt = Date.now() - t0;
+        const entry = {
+          label: s.label,
+          sent: s.chars,
+          error: err.message || String(err),
+          elapsedMs: dt,
+        };
+        results.push(entry);
+        console.warn('[DIAG]', s.label, 'FAILED:', err.message || err, '(' + dt + 'ms)');
+      }
+    }
+
+    // 分析结论
+    let maxOkSize = 0;
+    let firstFail = null;
+    for (const r of results) {
+      if (r.receivedLength === r.sent && r.decodedLength >= 0) {
+        maxOkSize = r.sent;
+      } else if (!firstFail) {
+        firstFail = r.label + ' (' + (r.error || (r.truncated ? 'truncated to ' + r.receivedLength : 'unknown')) + ')';
+      }
+    }
+    const summary = {
+      done: true,
+      maxOkSize,
+      maxOkSizeKB: Math.round(maxOkSize / 1024),
+      firstFail,
+      results,
+    };
+    window.__bridgeDiagnostic = summary;
+    console.log('[DIAG] ===== 桥字符串上限探测结果 =====');
+    console.log('[DIAG] 最大 OK 大小:', summary.maxOkSizeKB + 'KB (' + maxOkSize + ' 字符)');
+    if (firstFail) console.log('[DIAG] 首个失败:', firstFail);
+    console.log('[DIAG] 完整结果存于 window.__bridgeDiagnostic');
   },
 
   /** 检测 NativeUpload 原生插件是否可用 */
