@@ -13,7 +13,6 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.util.Base64;
 
 /**
  * Native Upload Plugin — Capacitor 自定义插件
@@ -54,7 +53,8 @@ public class NativeUploadPlugin extends Plugin {
         new Thread(() -> {
             HttpURLConnection conn = null;
             try {
-                byte[] bodyBytes = Base64.getDecoder().decode(bodyBase64);
+                // 用 android.util.Base64（兼容 API 24+，java.util.Base64.getDecoder() 需要 API 26+）
+                byte[] bodyBytes = android.util.Base64.decode(bodyBase64, android.util.Base64.DEFAULT);
 
                 URL u = new URL(url);
                 conn = (HttpURLConnection) u.openConnection();
