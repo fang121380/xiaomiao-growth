@@ -1,8 +1,8 @@
 {
-  "build": 38,
-  "version": "v2.3.24",
+  "build": 39,
+  "version": "v2.4.0",
   "released": "2026-09-20",
-  "changelog": "回退 v2.3.23 诊断版（导致 app 打不开），回到 v2.3.22 多图 canvas 拼接 + 综合回复",
-  "force": false,
+  "changelog": "🚀 v2.4.0: 加 NativeUpload 原生插件（Capacitor Java HttpURLConnection），绕开 WebView 83 POST bug。需要重装 APK。",
+  "force": true,
   "min_supported_build": 4
 }

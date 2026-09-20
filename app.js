@@ -3,8 +3,8 @@
  *  - 现代化 UI + 自定义组件（DatePicker / BreedPicker / Toast / Sheet）
  * ==================================================================== */
 
-const APP_VERSION = 'v2.3.23';
-const APK_VERSION_CODE = 19;  // 与 android/app/build.gradle 的 versionCode 同步
+const APP_VERSION = 'v2.4.0';
+const APK_VERSION_CODE = 20;  // 与 android/app/build.gradle 的 versionCode 同步
 
 /* ============ 版本记忆（用于检测升级并弹 toast / 关于页标识） ============ */
 const LS_LAST_SEEN_VERSION  = 'xiaomiao.lastSeenVersion';     // e.g. 'v2.2.7'
@@ -1610,7 +1610,7 @@ const Assistant = {
     // 现在走 XHR POST form-urlencoded 不再受 CF URL 长度限制，可以恢复原画质
     toProcess.forEach(async (file, i) => {
       try {
-        const blob = await compressImage(file, 400, 0.4);
+        const blob = await compressImage(file, 600, 0.5);
         const compressedDataUrl = await new Promise((res, rej) => {
           const r = new FileReader();
           r.onload = () => res(r.result);
@@ -1651,16 +1651,79 @@ const Assistant = {
    * - 图片已在 onAttachImage 压缩到 400px JPEG 0.3（base64 ~5-15KB，URL <50KB）
    */
   async callVision(text, images) {
-    // WebView 83 实测踩坑：所有 POST 都 "Failed to fetch"。
-    // 唯一稳定通道是 GET（CF URL 上限 50KB）。
-    // 多张图：客户端用 canvas 拼成 2×2 网格单图，单图 GET+base64 一次发，
-    // AI 看拼图给一条综合回复。
+    // 主通道：原生 POST（Capacitor NativeUpload 插件 + Java HttpURLConnection）
+    //   完全绕开 WebView 83 的所有 POST bug；body 无大小限制；可发完整画质图
+    // 备用通道：GET+base64（v2.3.18 之前的方案，老 WebView 上唯一能用）
+    //   受 CF URL 50KB 限制，所以这里把图压小
+    //
+    // 优先级：先试原生 POST，NativeUpload 插件不可用时降级 GET+base64
+    const useNative = await this._isNativeUploadAvailable();
+
     let imageDataUrl;
     if (images.length === 1) {
       imageDataUrl = images[0];
     } else {
       imageDataUrl = await this._mergeImagesToGrid(images);
     }
+
+    if (useNative) {
+      return await this._callVisionNative(text, imageDataUrl);
+    } else {
+      return await this._callVisionGet(text, imageDataUrl);
+    }
+  },
+
+  /** 检测 NativeUpload 原生插件是否可用 */
+  async _isNativeUploadAvailable() {
+    try {
+      // Capacitor 暴露插件的方式：在原生环境里 Cap 存在 + 插件已注册
+      if (typeof Capacitor === 'undefined') return false;
+      if (typeof Capacitor.Plugins === 'undefined') return false;
+      // 原生平台 + 插件方法存在 → 可用
+      const platform = Capacitor.getPlatform && Capacitor.getPlatform();
+      const isNative = platform === 'android' || platform === 'ios';
+      const pluginAvailable = Capacitor.Plugins.NativeUpload && typeof Capacitor.Plugins.NativeUpload.post === 'function';
+      return isNative && pluginAvailable;
+    } catch (_) {
+      return false;
+    }
+  },
+
+  /** 原生 POST：通过 NativeUpload 插件走 Java HttpURLConnection */
+  async _callVisionNative(text, imageDataUrl) {
+    const model = this.VISION_MODEL;
+    const system = this.visionSystemPrompt();
+
+    // dataURL → base64 字符串 → 通过 NativeUpload 插件发 POST
+    const b64Idx = imageDataUrl.indexOf(',');
+    const mime = ((imageDataUrl.match(/data:([^;]+)/) || [])[1]) || 'image/jpeg';
+    const bodyBase64 = b64Idx >= 0 ? imageDataUrl.slice(b64Idx + 1) : imageDataUrl;
+
+    const qs = new URLSearchParams({
+      model,
+      system,
+      text: text || '',
+      temperature: '0.2',
+      max_tokens: '1000',
+    }).toString();
+    const url = 'https://xiaomiao-toh.pages.dev/api/vision?' + qs;
+
+    const result = await Capacitor.Plugins.NativeUpload.post({
+      url,
+      bodyBase64,
+      contentType: mime,
+    });
+    if (!result || !result.body) throw new Error('空响应');
+    let data;
+    try { data = JSON.parse(result.body); }
+    catch (e) { throw new Error('响应解析失败: ' + (e.message || '') + ' / body前100字: ' + String(result.body).slice(0, 100)); }
+    const reply = data.choices?.[0]?.message?.content;
+    if (!reply) throw new Error('返回为空（status=' + result.status + '）');
+    return reply;
+  },
+
+  /** GET 备用通道（WebView 83 老通道，受 CF URL 50KB 限制） */
+  async _callVisionGet(text, imageDataUrl) {
     const content = [
       { type: 'image_url', image_url: { url: imageDataUrl } },
     ];
@@ -3739,7 +3802,7 @@ async function boot() {
  *  远程版本检测（核心：让 APK 用户能收到推送的更新）
  *  每次启动对比 version.json 的 build 字段，比本地新就提示刷新
  * ==================================================================== */
-const LOCAL_BUILD = 37;  // 与 www/version.json 同步（APK 包内的基线版本）
+const LOCAL_BUILD = 39;  // 与 www/version.json 同步（APK 包内的基线版本）
 const LS_DISMISSED_BUILD = 'xiaomiao.lastDismissedBuild';  // 用户上次"确认/关闭"的 build
 let remoteUpdateInfo = null;
 

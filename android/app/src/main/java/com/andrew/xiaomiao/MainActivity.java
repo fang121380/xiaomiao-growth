@@ -39,6 +39,16 @@ public class MainActivity extends BridgeActivity {
     setupDownloadHandler();
   }
 
+  /**
+   * 注册 Capacitor 自定义插件（NativeUpload：走原生 HttpURLConnection，
+   * 绕开 Android WebView 83 上所有 POST 通道 bug）
+   */
+  @Override
+  public void onCreate(android.os.Bundle savedInstanceState) {
+    registerPlugin(NativeUploadPlugin.class);
+    super.onCreate(savedInstanceState);
+  }
+
   @Override
   public void onStop() {
     super.onStop();
