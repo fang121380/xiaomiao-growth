@@ -2566,9 +2566,7 @@ const Assistant = {
         try { errDetail = (await res.json()).error?.message || ''; } catch {}
         const err = new Error(`API ${res.status}${errDetail ? ' · ' + errDetail : ''}`);
         lastErr = err;
-        // 429 / 503 是 DeepSeek 限流，重试无用只会拉长等待，立即抛
-        if (res.status === 429 || res.status === 503) throw err;
-        // 其他 5xx 才重试
+        // 5xx 重试，4xx 直接抛出
         if (res.status >= 500 && attempt < maxRetries) {
           await new Promise(r => setTimeout(r, retryDelayMs * Math.pow(2, attempt)));
           continue;
